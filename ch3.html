@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>互動式傳輸層學習應用程式</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Visualization & Content Choices:
+        - Transport Layer Overview: Text summaries, comparison table (HTML). Goal: Inform. Interaction: None.
+        - Mux/Demux: Text, simple diagrams (HTML/CSS). Goal: Inform. Interaction: Hover for details.
+        - UDP: Text, segment diagram (HTML/CSS with JS for field descriptions). Goal: Inform. Interaction: Click on segment fields.
+        - RDT Principles:
+            - rdt versions: Text, FSM-like diagrams (HTML/CSS/JS for step-by-step reveal). Goal: Explain process. Interaction: Buttons to step through FSM states.
+            - Pipelining: Text, comparison diagram (HTML/CSS). Goal: Compare.
+            - GBN/SR: Text, comparison table, simplified sequence diagrams (HTML/CSS/JS for highlighting). Goal: Compare/Explain. Interaction: Toggle between GBN/SR.
+        - TCP Protocol:
+            - Segment: Interactive diagram (HTML/CSS/JS). Goal: Inform. Interaction: Click fields.
+            - RTT/Timeout: Text, formula, Chart.js for RTT graph. Goal: Explain/Visualize. Interaction: Hover on graph.
+            - Flow Control: Text, diagram (HTML/CSS). Goal: Explain.
+            - Connection Mgmt: Interactive 3-way handshake and closing diagrams (HTML/CSS/JS for step-by-step animation). Goal: Explain process. Interaction: Buttons to step through.
+        - Congestion Control Principles: Text, diagrams for scenarios (HTML/CSS). Goal: Inform.
+        - TCP Congestion Control:
+            - AIMD/Slow Start: Text, Chart.js for cwnd evolution. Goal: Visualize. Interaction: Buttons to simulate loss/timeout.
+            - CUBIC: Text, comparison graph concept (Chart.js if simple enough, otherwise static diagram). Goal: Compare.
+        - QUIC: Text, comparison diagrams (HTML/CSS). Goal: Inform.
+        All visualizations use HTML/CSS/Tailwind or Chart.js (Canvas). NO SVG/Mermaid. Justification: Enhance understanding through interactive exploration and dynamic visualization of processes and data. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .content-section { display: none; }
+        .content-section.active { display: block; }
+        .nav-button { transition: all 0.3s ease; }
+        .nav-button.active { background-color: #fbbf24; color: #78350f; }
+        .nav-button:hover { background-color: #f59e0b; }
+        .diagram-box { border: 1px solid #e5e7eb; padding: 10px; margin-top: 10px; border-radius: 8px; background-color: #f9fafb; }
+        .tcp-segment-field { cursor: pointer; transition: background-color 0.3s; padding: 4px; border-radius: 4px; }
+        .tcp-segment-field:hover { background-color: #e0f2fe; }
+        .fsm-state { border: 2px solid #9ca3af; padding: 10px; margin: 5px; border-radius: 8px; text-align: center; }
+        .fsm-arrow { text-align: center; font-size: 24px; margin: 0 5px; }
+        .handshake-step { opacity: 0.3; transition: opacity 0.5s ease-in-out; margin-bottom:10px; padding:10px; border:1px solid #ccc; border-radius:5px; }
+        .handshake-step.visible { opacity: 1; }
+        .chart-container { position: relative; width: 100%; max-width: 600px; margin-left: auto; margin-right: auto; height: 300px; max-height: 400px; }
+        @media (min-width: 768px) { .chart-container { height: 350px; } }
+        .tooltip { position: absolute; background-color: #333; color: white; padding: 5px 10px; border-radius: 4px; font-size: 0.875rem; z-index: 10; display: none; white-space: pre-wrap; }
+    </style>
+</head>
+<body class="bg-amber-50 text-amber-900">
+    <div class="container mx-auto p-4">
+        <header class="bg-amber-500 text-white p-6 rounded-lg shadow-lg mb-6">
+            <h1 class="text-3xl font-bold text-center">傳輸層互動學習指南</h1>
+        </header>
+
+        <nav class="mb-6 bg-white p-3 rounded-lg shadow">
+            <ul class="flex flex-wrap justify-center gap-2">
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="overview">傳輸層概覽</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="mux-demux">多工/解多工</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="udp">UDP 協定</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="rdt">可靠資料傳輸</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="tcp">TCP 協定</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="congestion-principles">擁塞控制原理</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="tcp-congestion">TCP 擁塞控制</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="evolution">傳輸層演進</button></li>
+            </ul>
+        </nav>
+
+        <main id="main-content" class="bg-white p-6 rounded-lg shadow-lg min-h-[60vh]">
+            <section id="overview" class="content-section active">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">傳輸層概覽</h2>
+                <p class="mb-3">本節介紹傳輸層在網路模型中的角色、提供的核心服務，以及它與網路層的區別。傳輸層負責提供應用程式行程之間的邏輯通訊。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">核心服務</h3>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">多工 (Multiplexing) 與解多工 (Demultiplexing):</strong> 允許在單一主機上同時運行多個網路應用。</li>
+                    <li><strong class="font-semibold">可靠資料傳輸 (Reliable Data Transfer):</strong> 確保資料無差錯、按順序、無丟失地從發送方傳到接收方 (主要由 TCP 提供)。</li>
+                    <li><strong class="font-semibold">流量控制 (Flow Control):</strong> 防止發送方發送過多資料淹沒接收方。</li>
+                    <li><strong class="font-semibold">擁塞控制 (Congestion Control):</strong> 當網路發生擁塞時，調節發送方的發送速率。</li>
+                </ul>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">傳輸層 vs. 網路層</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white border border-amber-200 rounded-lg">
+                        <thead>
+                            <tr class="bg-amber-100">
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">特性</th>
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">傳輸層</th>
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">網路層</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="py-2 px-4 border-b border-amber-200">通訊範圍</td>
+                                <td class="py-2 px-4 border-b border-amber-200">行程到行程 (Process-to-process)</td>
+                                <td class="py-2 px-4 border-b border-amber-200">主機到主機 (Host-to-host)</td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 px-4 border-b border-amber-200">提供的服務</td>
+                                <td class="py-2 px-4 border-b border-amber-200">邏輯通訊、可靠性、流量控制、擁塞控制</td>
+                                <td class="py-2 px-4 border-b border-amber-200">主機間資料包路由與轉發</td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 px-4 border-b border-amber-200">家庭類比</td>
+                                <td class="py-2 px-4 border-b border-amber-200">Ann 家的孩子寫信給 Bill 家的特定孩子 (孩子 = 行程)</td>
+                                <td class="py-2 px-4 border-b border-amber-200">郵政服務將信件從 Ann 家送到 Bill 家 (房子 = 主機)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="mt-4">傳輸層協定在端系統中運作。發送方將應用程式訊息分解為分段 (segments)，傳遞給網路層；接收方則將分段重組為訊息，傳遞給應用層。網際網路中主要的傳輸協定是 TCP 和 UDP。</p>
+            </section>
+
+            <section id="mux-demux" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">多工與解多工</h2>
+                <p class="mb-3">多工與解多工是傳輸層的關鍵功能，使得多個應用程式可以共享網路連接。發送端執行多工，接收端執行解多工。</p>
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div class="diagram-box">
+                        <h3 class="text-xl font-semibold mb-2 text-amber-600">多工 (Multiplexing)</h3>
+                        <p>在發送端，傳輸層從多個應用程式的 sockets 收集資料區塊，為每個區塊添加報頭資訊 (例如來源埠號和目的埠號)，然後將形成的分段傳遞給網路層。</p>
+                        <div class="mt-2 p-2 border border-dashed border-amber-400 rounded text-center">
+                            應用 P1 Socket →<br>
+                            應用 P2 Socket → <span class="text-2xl font-bold mx-2">&searr;</span> 傳輸層 <span class="text-2xl font-bold mx-2">&searr;</span> 網路層<br>
+                            應用 P3 Socket →
+                        </div>
+                    </div>
+                    <div class="diagram-box">
+                        <h3 class="text-xl font-semibold mb-2 text-amber-600">解多工 (Demultiplexing)</h3>
+                        <p>在接收端，傳輸層檢查到達分段的報頭欄位，將每個分段的內容導向到正確的應用程式 socket。這是透過使用埠號來實現的。</p>
+                         <div class="mt-2 p-2 border border-dashed border-amber-400 rounded text-center">
+                            網路層 <span class="text-2xl font-bold mx-2">&searr;</span> 傳輸層 <span class="text-2xl font-bold mx-2">&searr;</span> <br>
+                            <span class="text-2xl font-bold mx-2">&nearr;</span> Socket 應用 P1<br>
+                            <span class="text-2xl font-bold mx-2">&nearr;</span> Socket 應用 P2<br>
+                            <span class="text-2xl font-bold mx-2">&nearr;</span> Socket 應用 P3
+                        </div>
+                    </div>
+                </div>
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">解多工方式</h3>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">無連接解多工 (UDP):</strong> 接收主機僅使用 UDP 分段中的「目的埠號」來將分段導向到相應的 socket。來自不同來源 IP 或來源埠號但具有相同目的埠號的 UDP 分段將被導向到同一個 socket。</li>
+                    <li><strong class="font-semibold">面向連接解多工 (TCP):</strong> TCP socket 由一個四元組唯一識別：(來源 IP 位址, 來源埠號, 目的 IP 位址, 目的埠號)。接收端使用這所有四個值來將 TCP 分段導向到正確的 socket。這允許多個客戶端同時連接到同一個伺服器行程的不同 socket。</li>
+                </ul>
+            </section>
+
+            <section id="udp" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">UDP 協定 (User Datagram Protocol)</h2>
+                <p class="mb-3">UDP 是一種「無修飾」、極簡的網際網路傳輸協定。它提供「盡力而為」的服務，UDP 分段可能會丟失，也可能無序地傳遞給應用程式。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">UDP 特性</h3>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">無連接:</strong> 在 UDP 發送方和接收方之間沒有握手過程，每個 UDP 分段都獨立處理。</li>
+                    <li><strong class="font-semibold">無連接建立延遲:</strong> 不需要像 TCP 那樣進行連接設定，可以減少延遲。</li>
+                    <li><strong class="font-semibold">簡單:</strong> 發送方和接收方都無需維護連接狀態。</li>
+                    <li><strong class="font-semibold">小報頭:</strong> UDP 報頭只有 8 個位元組。</li>
+                    <li><strong class="font-semibold">無擁塞控制:</strong> UDP 可以按照應用程式期望的速率發送資料，即使網路擁塞也不會主動減速。</li>
+                </ul>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">UDP 分段結構</h3>
+                <div class="diagram-box overflow-x-auto">
+                    <p class="text-sm mb-1 text-center">點擊欄位查看說明</p>
+                    <table class="min-w-full border-collapse border border-amber-300">
+                        <thead>
+                            <tr>
+                                <th colspan="2" class="border border-amber-300 p-2 bg-amber-100">0-15 位元</th>
+                                <th colspan="2" class="border border-amber-300 p-2 bg-amber-100">16-31 位元</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="2" class="tcp-segment-field border border-amber-300 p-2 text-center" data-description="來源應用程式的埠號 (選用)">來源埠號</td>
+                                <td colspan="2" class="tcp-segment-field border border-amber-300 p-2 text-center" data-description="目的應用程式的埠號 (必要)">目的埠號</td>
+                            </tr>
+                            <tr>
+                                <td colspan="2" class="tcp-segment-field border border-amber-300 p-2 text-center" data-description="UDP 分段的長度 (包括報頭和資料)，以位元組為單位">長度</td>
+                                <td colspan="2" class="tcp-segment-field border border-amber-300 p-2 text-center" data-description="用於檢測 UDP 分段在傳輸過程中是否發生位元錯誤">校驗和</td>
+                            </tr>
+                            <tr>
+                                <td colspan="4" class="tcp-segment-field border border-amber-300 p-8 text-center bg-amber-50" data-description="來自應用層的資料">應用資料 (負載)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="udp-field-description-tooltip" class="tooltip"></div>
+
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">UDP 校驗和</h3>
+                <p class="mb-3">UDP 校驗和用於檢測分段在傳輸過程中是否發生了位元錯誤。發送方計算校驗和並將其放入校驗和欄位。接收方重新計算校驗和，如果計算結果與接收到的校驗和欄位值不符，則檢測到錯誤。</p>
+                <p class="mb-3">計算方法：將 UDP 分段的內容 (包括偽報頭、UDP 報頭和資料) 視為一系列 16 位元的整數，對這些整數進行一補數和運算。如果加法過程中最高位產生進位，則該進位必須加回到結果的最低位 (回捲)。校驗和欄位本身在計算時被視為 0。</p>
+                <p class="text-sm text-gray-600">注意：UDP 校驗和是選用的 (在 IPv4 中)。如果發送方不計算校驗和，則該欄位全為 0。然而，強烈建議使用校驗和。</p>
+
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">UDP 用途</h3>
+                <p>UDP常用於對延遲敏感、能容忍少量丟包的應用，例如：</p>
+                <ul class="list-disc list-inside space-y-1">
+                    <li>串流多媒體 (如視訊、音訊會議)</li>
+                    <li>DNS (域名系統)</li>
+                    <li>SNMP (簡單網路管理協定)</li>
+                    <li>HTTP/3 (QUIC 協定使用 UDP 作為底層傳輸)</li>
+                </ul>
+                 <p class="mt-2">如果應用程式需要基於 UDP 的可靠傳輸，則必須在應用層自行實現可靠性機制。</p>
+            </section>
+
+            <section id="rdt" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">可靠資料傳輸原理 (RDT)</h2>
+                <p class="mb-3">可靠資料傳輸是傳輸層的核心功能之一，目標是確保資料能夠無差錯、按順序、無丟失地從發送方傳遞到接收方，即使底層網路通道本身是不可靠的。我們將逐步探討 rdt 協議的設計。</p>
+
+                <div class="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                    <h3 class="text-lg font-semibold text-amber-600">RDT 1.0: 可靠通道上的可靠傳輸</h3>
+                    <p class="text-sm">假設底層通道完美可靠 (無位元錯誤、無封包遺失)。</p>
+                    <div class="flex justify-around mt-2">
+                        <div class="fsm-state w-1/3"><strong>發送方</strong><br>等待上層呼叫<br><small>rdt_send(data) → udt_send(packet)</small></div>
+                        <div class="fsm-arrow self-center">&rarr;</div>
+                        <div class="fsm-state w-1/3"><strong>接收方</strong><br>等待下層呼叫<br><small>rdt_rcv(packet) → deliver_data(data)</small></div>
+                    </div>
+                    <p class="text-xs mt-1 text-center">這是最簡單的情況，發送方發送，接收方接收。</p>
+                </div>
+
+                <div class="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                    <h3 class="text-lg font-semibold text-amber-600">RDT 2.0: 具有位元錯誤的通道</h3>
+                    <p class="text-sm">底層通道可能翻轉封包中的位元。使用校驗和檢測錯誤。引入 ACK (確認) 和 NAK (否定確認) 來進行錯誤恢復。這是一種停止等待協議。</p>
+                    <p class="text-xs mt-1"><strong>問題:</strong> 如果 ACK/NAK 本身損壞怎麼辦？發送方無法知道接收方的狀態。</p>
+                </div>
+                
+                <div class="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                    <h3 class="text-lg font-semibold text-amber-600">RDT 2.1: 處理損壞的 ACK/NAK</h3>
+                    <p class="text-sm">發送方為每個封包添加序列號 (例如 0 和 1 交替)。接收方丟棄重複的封包。發送方重傳損壞 ACK/NAK 對應的封包。</p>
+                </div>
+
+                <div class="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                    <h3 class="text-lg font-semibold text-amber-600">RDT 2.2: 無 NAK 的協議</h3>
+                    <p class="text-sm">與 rdt2.1 功能相同，但僅使用 ACK。接收方發送對最後正確收到的、按序封包的 ACK (包含序列號)。發送方收到重複的 ACK (表示其後的封包未收到) 時，行為類似於收到 NAK，即重傳當前封包。</p>
+                </div>
+
+                <div class="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                    <h3 class="text-lg font-semibold text-amber-600">RDT 3.0: 具有錯誤和遺失的通道</h3>
+                    <p class="text-sm">底層通道不僅可能產生位元錯誤，還可能遺失封包 (資料封包或 ACK 封包)。發送方等待「合理」時間以接收 ACK，如果超時則重傳封包。序列號處理重複問題。</p>
+                    <p class="text-xs mt-1"><strong>停止等待的性能:</strong> $U_{sender} = (L/R) / (RTT + L/R)$。對於高頻寬延遲網路，利用率極低。</p>
+                </div>
+
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">管線化協議 (Pipelining)</h3>
+                <p class="mb-3">為了解決停止等待協議的性能瓶頸，引入了管線化技術。發送方允許發送多個「在途」(in-flight)、尚未確認的封包，從而顯著提高鏈路利用率。</p>
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div class="diagram-box">
+                        <h4 class="text-lg font-semibold text-amber-600">Go-Back-N (GBN)</h4>
+                        <p class="text-sm">發送方維護一個大小為 N 的窗口，允許最多 N 個已發送但未確認的封包。使用累計確認：ACK(n) 確認所有序列號直到 n (包括 n) 的封包都已正確接收。如果發生超時，發送方會重傳超時封包以及窗口中所有更高序列號的封包。接收方只接收按序到達的封包，丟棄所有失序封包，並為正確按序收到的最高序列號封包發送 ACK。</p>
+                    </div>
+                    <div class="diagram-box">
+                        <h4 class="text-lg font-semibold text-amber-600">Selective Repeat (SR)</h4>
+                        <p class="text-sm">接收方單獨確認所有正確收到的封包，即使它們是失序的，並緩存失序封包，直到所有前面的封包都到達後再按序交付給上層。發送方也為每個未確認的封包維護一個獨立的計時器。當某個封包超時時，僅重傳該特定封包。這比 GBN 更有效率，但實現更複雜。SR 需要仔細設計序列號空間和窗口大小以避免歧義 (兩難問題)。</p>
+                    </div>
+                </div>
+                 <p class="mt-3 text-sm">管線化協議需要更大的序列號空間和在發送方/接收方的緩衝機制。</p>
+            </section>
+
+            <section id="tcp" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">TCP 協定 (Transmission Control Protocol)</h2>
+                <p class="mb-3">TCP 是網際網路核心協定之一，提供可靠的、面向連接的、基於位元組流的傳輸服務。它包含複雜的機制來確保資料的可靠交付、進行流量控制和擁塞控制。</p>
+                
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">TCP 分段結構</h3>
+                <div class="diagram-box overflow-x-auto">
+                     <p class="text-sm mb-1 text-center">點擊欄位查看說明</p>
+                    <table class="min-w-full border-collapse border border-amber-300 text-xs md:text-sm">
+                        <tbody>
+                            <tr>
+                                <td colspan="4" class="tcp-segment-field border p-1 text-center" data-description="來源應用程式的埠號">來源埠號 (16位元)</td>
+                                <td colspan="4" class="tcp-segment-field border p-1 text-center" data-description="目的應用程式的埠號">目的埠號 (16位元)</td>
+                            </tr>
+                            <tr>
+                                <td colspan="8" class="tcp-segment-field border p-1 text-center" data-description="此分段中第一個資料位元組在位元組流中的序列號">序列號 (32位元)</td>
+                            </tr>
+                            <tr>
+                                <td colspan="8" class="tcp-segment-field border p-1 text-center" data-description="期望從對方接收的下一個位元組的序列號 (若ACK位元設定)">確認號 (32位元)</td>
+                            </tr>
+                            <tr>
+                                <td class="tcp-segment-field border p-1 text-center" data-description="TCP報頭長度(以4位元組為單位)">HLEN (4位)</td>
+                                <td colspan="3" class="tcp-segment-field border p-1 text-center" data-description="保留供將來使用 (應為0)">保留 (6位)</td>
+                                <td class="tcp-segment-field border p-1 text-center" data-description="ECN-Nonce (擁塞通知)">N</td>
+                                <td class="tcp-segment-field border p-1 text-center" data-description="Congestion Window Reduced (擁塞窗口減少)">C</td>
+                                <td class="tcp-segment-field border p-1 text-center" data-description="ECN-Echo (明確擁塞通知回應)">E</td>
+                                <td class="tcp-segment-field border p-1 text-center" data-description="Urgent Pointer field significant (緊急指標有效)">U</td>
+                            </tr>
+                             <tr>
+                                <td class="tcp-segment-field border p-1 text-center" data-description="Acknowledgement field significant (確認欄位有效)">A</td>
+                                <td class="tcp-segment-field border p-1 text-center" data-description="Push function (推送功能)">P</td>
+                                <td class="tcp-segment-field border p-1 text-center" data-description="Reset the connection (重置連接)">R</td>
+                                <td class="tcp-segment-field border p-1 text-center" data-description="Synchronize sequence numbers (同步序列號，用於連接建立)">S</td>
+                                <td class="tcp-segment-field border p-1 text-center" data-description="No more data from sender (終止連接)">F</td>
+                                <td colspan="3" class="tcp-segment-field border p-1 text-center" data-description="接收方願意接受的資料量 (用於流量控制)">接收窗口 (rwnd, 16位元)</td>
+                            </tr>
+                            <tr>
+                                <td colspan="4" class="tcp-segment-field border p-1 text-center" data-description="對TCP報頭、資料和偽報頭計算的校驗和">校驗和 (16位元)</td>
+                                <td colspan="4" class="tcp-segment-field border p-1 text-center" data-description="指向緊急資料的最後一個位元組 (若URG位元設定)">緊急指標 (16位元)</td>
+                            </tr>
+                            <tr>
+                                <td colspan="8" class="tcp-segment-field border p-1 text-center" data-description="可選欄位，長度可變 (例如MSS選項)">選項 (若有)</td>
+                            </tr>
+                             <tr>
+                                <td colspan="8" class="tcp-segment-field border p-4 text-center bg-amber-50" data-description="應用層資料">應用資料 (負載)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="tcp-field-description-tooltip" class="tooltip"></div>
+
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">TCP 連接管理：三次握手</h3>
+                <p class="mb-3">TCP 在傳輸資料之前需要建立連接。這是透過「三次握手」過程完成的：</p>
+                <div id="three-way-handshake" class="space-y-2">
+                    <div class="handshake-step p-3 bg-amber-50 rounded border border-amber-200"><strong>步驟 1 (SYN):</strong> 客戶端發送一個 TCP 分段給伺服器，其中 SYN 控制位元設為 1，並選擇一個初始序列號 (client_isn)。客戶端進入 SYN_SENT 狀態。</div>
+                    <div class="handshake-step p-3 bg-amber-50 rounded border border-amber-200"><strong>步驟 2 (SYN+ACK):</strong> 伺服器收到 SYN 後，如果同意連接，會回覆一個 TCP 分段。此分段中 SYN 和 ACK 控制位元都設為 1。伺服器選擇自己的初始序列號 (server_isn)，並將確認號設為 client_isn + 1。伺服器進入 SYN_RCVD 狀態。</div>
+                    <div class="handshake-step p-3 bg-amber-50 rounded border border-amber-200"><strong>步驟 3 (ACK):</strong> 客戶端收到伺服器的 SYN+ACK 分段後，發送一個 ACK 分段進行確認。此分段中 ACK 控制位元設為 1，確認號設為 server_isn + 1。連接建立完成，客戶端和伺服器都進入 ESTABLISHED 狀態，可以開始傳輸資料。</div>
+                </div>
+                <button id="animateHandshakeBtn" class="mt-3 px-4 py-2 bg-amber-500 text-white rounded hover:bg-amber-600">演示三次握手</button>
+
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">TCP 流量控制</h3>
+                <p class="mb-3">TCP 使用流量控制機制來防止快速的發送方淹沒慢速的接收方。接收方在其發送給發送方的 TCP 分段的「接收窗口 (rwnd)」欄位中通告其可用的緩衝區大小。發送方確保其未確認的在途資料量不超過接收方通告的 rwnd 值。</p>
+            </section>
+
+            <section id="congestion-principles" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">擁塞控制原理</h2>
+                <p class="mb-3">擁塞是指網路上有太多來源同時發送太多資料，超出了網路的處理能力。這會導致封包在路由器緩衝區中排長隊 (長延遲) 甚至被丟棄 (緩衝區溢位)。擁塞控制與流量控制不同，前者是針對整個網路的狀況，後者是針對單一接收方的能力。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">擁塞的成本</h3>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">長延遲:</strong> 封包在路由器緩衝區中等待時間過長。</li>
+                    <li><strong class="font-semibold">封包遺失:</strong> 路由器緩衝區滿溢導致新到達的封包被丟棄。</li>
+                    <li><strong class="font-semibold">吞吐量下降:</strong> 由於重傳和網路效率降低，有效吞吐量可能遠低於鏈路容量。</li>
+                    <li><strong class="font-semibold">浪費的傳輸容量:</strong> 被丟棄的封包在上游鏈路中消耗的傳輸資源被浪費了。</li>
+                    <li><strong class="font-semibold">不必要的重傳:</strong> 過早超時可能導致不必要的重傳，進一步加劇擁塞。</li>
+                </ul>
+                 <h3 class="text-xl font-semibold mb-2 text-amber-600">擁塞控制方法</h3>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">端到端擁塞控制:</strong> 網路本身不提供明確的擁塞反饋。傳輸層的發送方透過觀察網路行為 (如封包遺失、延遲增加) 來推斷擁塞情況，並相應調整其發送速率。TCP 主要採用此方法。</li>
+                    <li><strong class="font-semibold">網路輔助擁塞控制:</strong> 網路中的路由器主動向發送方或接收方提供關於擁塞狀態的明確反饋。例如，路由器可以標記封包 (如 ECN)，或直接告知發送方應使用的速率。</li>
+                </ul>
+            </section>
+
+            <section id="tcp-congestion" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">TCP 擁塞控制</h2>
+                <p class="mb-3">TCP 使用一套複雜的機制來控制其發送速率，以適應網路的擁塞狀況。其核心思想是「探測」可用頻寬，並在檢測到擁塞時減少發送速率。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">擁塞窗口 (cwnd) 與 AIMD</h3>
+                <p class="mb-2">TCP 發送方維護一個「擁塞窗口」(cwnd)，它限制了發送方在任何時刻可以擁有的未確認的在途資料量。TCP 的發送速率約等於 `cwnd / RTT`。</p>
+                <p class="mb-2">TCP 擁塞控制的核心演算法是「加性增加，乘性減少」(AIMD)：</p>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">加性增加 (Additive Increase):</strong> 當網路未擁塞時 (即沒有封包遺失)，TCP 會在每個 RTT 內將 `cwnd` 增加一個 MSS (Maximum Segment Size)。這是一個緩慢的探測過程。</li>
+                    <li><strong class="font-semibold">乘性減少 (Multiplicative Decrease):</strong> 當檢測到封包遺失 (表示擁塞) 時，TCP 會將 `cwnd` 大幅減少。通常是減半 (對於由三個重複 ACK 檢測到的遺失) 或降至 1 MSS (對於超時檢測到的遺失)。</li>
+                </ul>
+                <div class="chart-container my-4">
+                    <canvas id="cwndChart"></canvas>
+                </div>
+                <p class="text-sm text-center mb-3">上圖示意了 TCP 擁塞窗口 (cwnd) 隨時間變化的典型「鋸齒狀」行為。</p>
+
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">TCP 擁塞控制階段</h3>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">慢啟動 (Slow Start):</strong> 連接開始時，`cwnd` 初始設為 1 MSS。在慢啟動階段，每收到一個 ACK，`cwnd` 就增加 1 MSS，導致 `cwnd` 大致每隔一個 RTT 翻倍，呈指數級增長。慢啟動持續到 `cwnd` 達到「慢啟動閾值」(ssthresh) 或檢測到封包遺失。</li>
+                    <li><strong class="font-semibold">擁塞避免 (Congestion Avoidance):</strong> 當 `cwnd` 超過 `ssthresh` 後，TCP 進入擁塞避免階段。此時，`cwnd` 的增長變為線性，大約每個 RTT 增加 1 MSS。目的是更謹慎地探測可用頻寬。</li>
+                    <li><strong class="font-semibold">快速重傳與快速恢復 (Fast Retransmit and Fast Recovery):</strong> 如果發送方收到三個重複的 ACK，它會認為一個封包已經遺失，並立即重傳該遺失的封包 (快速重傳)，而無需等待超時。之後，TCP 進入快速恢復階段，將 `ssthresh` 設為當前 `cwnd` 的一半，並將 `cwnd` 設為新的 `ssthresh` 加上 3 MSS (代表三個重複 ACK 觸發的封包)，然後進入擁塞避免階段。這比等待超時後將 `cwnd` 降至 1 MSS 更為積極。</li>
+                </ul>
+                 <p class="mt-3">當發生超時事件時，`ssthresh` 通常設為當前 `cwnd` 的一半，而 `cwnd` 被重置為 1 MSS，然後重新開始慢啟動過程。</p>
+            </section>
+
+            <section id="evolution" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">傳輸層演進</h2>
+                <p class="mb-3">TCP 和 UDP 作為主要的傳輸協定已經服務了數十年。然而，隨著網路環境和應用需求的變化，傳輸層的功能也在不斷演進。一個顯著的趨勢是將一些傳統上由傳輸層提供的功能轉移到應用層，並在 UDP 之上構建新的協定。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">QUIC (Quick UDP Internet Connections)</h3>
+                <p class="mb-2">QUIC 是一個由 Google 開發的現代傳輸協定，現在已成為 IETF 標準，並作為 HTTP/3 的底層傳輸機制。QUIC 運行在 UDP 之上，旨在解決 TCP 的一些固有問題，並提供更佳的性能和靈活性。</p>
+                <h4 class="text-lg font-semibold mt-3 mb-1 text-amber-600">QUIC 的主要特性與優勢：</h4>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">減少連接建立延遲:</strong> QUIC 可以在 0-RTT 或 1-RTT 內完成連接建立和加密握手，而傳統的 TCP + TLS 通常需要 2-3 RTT。</li>
+                    <li><strong class="font-semibold">改進的擁塞控制:</strong> QUIC 內建了更先進和可插拔的擁塞控制機制。</li>
+                    <li><strong class="font-semibold">多路徑傳輸:</strong> QUIC 支持在多個網路路徑上同時傳輸資料。</li>
+                    <li><strong class="font-semibold">解決隊頭阻塞 (Head-of-Line Blocking):</strong>
+                        <ul class="list-circle list-inside ml-4">
+                            <li>在 TCP 中，如果一個封包遺失，後續到達的封包即使屬於不同的應用層流，也必須等待該遺失封包被重傳和接收，這就是隊頭阻塞。</li>
+                            <li>QUIC 在單個連接內支持多個獨立的「流 (streams)」。一個流中的封包遺失不會阻塞其他流的處理，因為每個流都有自己的流量控制和可靠性機制。</li>
+                        </ul>
+                    </li>
+                    <li><strong class="font-semibold">連接遷移:</strong> 當客戶端的 IP 位址或埠號改變時 (例如從 Wi-Fi 切換到行動網路)，QUIC 連接可以保持不斷開，而 TCP 連接通常會中斷。</li>
+                    <li><strong class="font-semibold">內建加密:</strong> QUIC 的所有傳輸都預設加密 (類似於 TLS)，提供了更好的安全性。</li>
+                </ul>
+                <p>QUIC 的設計代表了傳輸層功能向應用層轉移的一種趨勢，利用 UDP 的靈活性來更快地部署和演進新的傳輸特性，而無需修改作業系統核心中的 TCP/IP 堆疊。</p>
+            </section>
+        </main>
+
+        <footer class="mt-8 text-center text-sm text-amber-700">
+            <p>&copy; 2025 互動式傳輸層學習指南。基於 Kurose & Ross 教材內容製作。</p>
+        </footer>
+    </div>
+
+    <script>
+        const navButtons = document.querySelectorAll('.nav-button');
+        const contentSections = document.querySelectorAll('.content-section');
+        const mainContent = document.getElementById('main-content');
+
+        function showSection(targetId) {
+            contentSections.forEach(section => {
+                section.classList.remove('active');
+            });
+            navButtons.forEach(button => {
+                button.classList.remove('active');
+            });
+
+            const targetSection = document.getElementById(targetId);
+            const targetButton = document.querySelector(`.nav-button[data-target="${targetId}"]`);
+
+            if (targetSection) {
+                targetSection.classList.add('active');
+                 // Scroll to the top of the main content area
+                mainContent.scrollTop = 0; // For older browsers
+                mainContent.scrollTo({ top: 0, behavior: 'smooth' }); // For modern browsers with smooth scroll
+            }
+            if (targetButton) {
+                targetButton.classList.add('active');
+            }
+        }
+
+        navButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const targetId = button.dataset.target;
+                showSection(targetId);
+            });
+        });
+
+        // Show the first section by default
+        if (navButtons.length > 0) {
+            showSection(navButtons[0].dataset.target);
+        }
+
+        // Tooltip for UDP segment fields
+        const udpFields = document.querySelectorAll('#udp .tcp-segment-field');
+        const udpTooltip = document.getElementById('udp-field-description-tooltip');
+        udpFields.forEach(field => {
+            field.addEventListener('mouseenter', (e) => {
+                udpTooltip.textContent = field.dataset.description;
+                udpTooltip.style.display = 'block';
+                const rect = field.getBoundingClientRect();
+                const mainRect = mainContent.getBoundingClientRect();
+                udpTooltip.style.left = `${e.clientX - mainRect.left + 15}px`;
+                udpTooltip.style.top = `${e.clientY - mainRect.top + 15}px`;
+            });
+            field.addEventListener('mouseleave', () => {
+                udpTooltip.style.display = 'none';
+            });
+        });
+        
+        // Tooltip for TCP segment fields
+        const tcpFields = document.querySelectorAll('#tcp .tcp-segment-field');
+        const tcpTooltip = document.getElementById('tcp-field-description-tooltip');
+        tcpFields.forEach(field => {
+            field.addEventListener('mouseenter', (e) => {
+                tcpTooltip.textContent = field.dataset.description;
+                tcpTooltip.style.display = 'block';
+                const rect = field.getBoundingClientRect();
+                const mainRect = mainContent.getBoundingClientRect();
+                tcpTooltip.style.left = `${e.clientX - mainRect.left + 15}px`;
+                tcpTooltip.style.top = `${e.clientY - mainRect.top + 15}px`;
+            });
+            field.addEventListener('mouseleave', () => {
+                tcpTooltip.style.display = 'none';
+            });
+        });
+
+        // TCP 3-way handshake animation
+        const handshakeSteps = document.querySelectorAll('#three-way-handshake .handshake-step');
+        const animateHandshakeBtn = document.getElementById('animateHandshakeBtn');
+        let currentStep = 0;
+        let handshakeInterval;
+
+        function showNextStep() {
+            if (currentStep < handshakeSteps.length) {
+                handshakeSteps[currentStep].classList.add('visible');
+                currentStep++;
+            } else {
+                clearInterval(handshakeInterval);
+            }
+        }
+
+        if(animateHandshakeBtn) {
+            animateHandshakeBtn.addEventListener('click', () => {
+                currentStep = 0;
+                handshakeSteps.forEach(step => step.classList.remove('visible'));
+                clearInterval(handshakeInterval); // Clear any existing interval
+                handshakeInterval = setInterval(showNextStep, 1000); // Show a step every 1 second
+            });
+        }
+
+        // CWND Chart
+        const cwndChartCtx = document.getElementById('cwndChart')?.getContext('2d');
+        if (cwndChartCtx) {
+            const initialData = {
+                labels: [0],
+                datasets: [{
+                    label: '擁塞窗口 (cwnd) 大小 (MSS)',
+                    data: [1],
+                    borderColor: '#d97706', // amber-600
+                    backgroundColor: '#fef3c7', // amber-100
+                    fill: false,
+                    tension: 0.1
+                }]
+            };
+
+            const cwndChartConfig = {
+                type: 'line',
+                data: initialData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: '時間 (RTT 週期)'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'cwnd (MSS)'
+                            },
+                            beginAtZero: true
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                title: function(tooltipItems) {
+                                    return 'RTT ' + tooltipItems[0].label;
+                                }
+                            }
+                        },
+                        legend: {
+                            labels: {
+                                // This more specific font property overrides the global property
+                                font: {
+                                    size: 12
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            const myCwndChart = new Chart(cwndChartCtx, cwndChartConfig);
+
+            // Simulate cwnd growth (simplified for demonstration)
+            let time = 0;
+            let cwnd = 1;
+            let ssthresh = 16; // Example initial ssthresh
+            let phase = 'slow-start'; // slow-start, congestion-avoidance
+
+            function updateCwndChart() {
+                time++;
+                if (phase === 'slow-start') {
+                    cwnd *= 2;
+                    if (cwnd >= ssthresh) {
+                        phase = 'congestion-avoidance';
+                    }
+                } else if (phase === 'congestion-avoidance') {
+                    cwnd += 1;
+                }
+
+                // Simulate a loss event
+                if (time % 10 === 0 && time > 0) { // Loss every 10 RTTs for demo
+                    ssthresh = Math.max(Math.floor(cwnd / 2), 2);
+                    cwnd = 1; // TCP Tahoe like behavior for simplicity (timeout)
+                    phase = 'slow-start';
+                     myCwndChart.data.datasets[0].borderColor = '#ef4444'; // red-500 for loss
+                } else {
+                    myCwndChart.data.datasets[0].borderColor = '#d97706'; // amber-600
+                }
+
+
+                if (time > 25) { // Stop simulation after some time
+                     // Keep chart as is
+                } else {
+                    myCwndChart.data.labels.push(time);
+                    myCwndChart.data.datasets[0].data.push(cwnd);
+                    myCwndChart.update();
+                    setTimeout(updateCwndChart, 1500); // Update every 1.5 seconds
+                }
+            }
+             // Only start animation if section is active
+            const observer = new MutationObserver((mutationsList, obs) => {
+                for(const mutation of mutationsList) {
+                    if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                        const tcpCongestionSection = document.getElementById('tcp-congestion');
+                        if (tcpCongestionSection && tcpCongestionSection.classList.contains('active')) {
+                            // Check if chart animation has already run to prevent re-running
+                            if (myCwndChart.data.labels.length <= 1) { 
+                                setTimeout(updateCwndChart, 1500);
+                            }
+                            // obs.disconnect(); // Disconnect after first activation if you only want it to run once
+                            return;
+                        }
+                    }
+                }
+            });
+            const tcpCongestionSection = document.getElementById('tcp-congestion');
+            if(tcpCongestionSection) {
+                 observer.observe(tcpCongestionSection, { attributes: true });
+            }
+        }
+    </script>
+</body>
+</html>
