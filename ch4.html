@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>互動式網路層資料平面學習應用程式</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: Warm Harmony -->
+    <!-- Application Structure Plan: The SPA uses a thematic navigation structure with sections for Overview, Router Internals, IP Protocol, Addressing, NAT, IPv6, Generalized Forwarding, and Middleboxes. This structure is chosen to logically group the data plane concepts from the lecture slides. Key interactions include clickable diagrams for datagram formats, simplified animations for router forwarding paths, and interactive explanations of addressing schemes. User flow allows navigation between these core topics for focused learning. -->
+    <!-- Visualization & Content Choices:
+        - Overview: Text summaries, comparison table (HTML). Goal: Inform. Interaction: None.
+        - Router Internals: Text, high-level diagram (HTML/CSS), input/output port functions (HTML/CSS with JS for highlights), longest prefix matching (HTML/CSS with JS for example walk-through), switching fabrics (HTML/CSS with JS for type selection). Goal: Explain architecture and processes. Interaction: Buttons to step through examples.
+        - IP Protocol: Text, datagram format (HTML/CSS with JS for field descriptions). Goal: Inform. Interaction: Click on segment fields.
+        - Addressing: Text, subnet diagrams (HTML/CSS), DHCP process (HTML/CSS with JS for step-by-step reveal). Goal: Explain concepts and processes. Interaction: Buttons to step through DHCP.
+        - NAT: Text, conceptual diagram (HTML/CSS), NAT table example (HTML/CSS with JS for step-by-step translation). Goal: Explain process. Interaction: Buttons to step through NAT translation.
+        - IPv6: Text, datagram format (HTML/CSS with JS for field descriptions), tunneling diagram (HTML/CSS with JS for animation). Goal: Inform, explain transition. Interaction: Click on fields, animate tunneling.
+        - Generalized Forwarding: Text, match+action concept (HTML/CSS), OpenFlow examples (HTML/CSS). Goal: Explain new paradigms. Interaction: None.
+        - Middleboxes: Text, IP hourglass diagram (HTML/CSS). Goal: Inform. Interaction: None.
+        All visualizations use HTML/CSS/Tailwind or Chart.js (Canvas). NO SVG/Mermaid. Justification: Enhance understanding through interactive exploration and dynamic visualization of processes and data. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .content-section { display: none; }
+        .content-section.active { display: block; }
+        .nav-button { transition: all 0.3s ease; }
+        .nav-button.active { background-color: #fbbf24; color: #78350f; }
+        .nav-button:hover { background-color: #f59e0b; }
+        .diagram-box { border: 1px solid #e5e7eb; padding: 10px; margin-top: 10px; border-radius: 8px; background-color: #f9fafb; }
+        .datagram-field { cursor: pointer; transition: background-color 0.3s; padding: 4px; border-radius: 4px; }
+        .datagram-field:hover { background-color: #e0f2fe; }
+        .process-step { opacity: 0.3; transition: opacity 0.5s ease-in-out; margin-bottom:10px; padding:10px; border:1px solid #ccc; border-radius:5px; }
+        .process-step.visible { opacity: 1; }
+        .tooltip { position: absolute; background-color: #333; color: white; padding: 5px 10px; border-radius: 4px; font-size: 0.875rem; z-index: 10; display: none; white-space: pre-wrap; }
+        .nat-table-row.highlight { background-color: #fffbeb; } /* amber-50 */
+        .tunnel-step { opacity: 0.3; transition: opacity 0.5s ease-in-out; }
+        .tunnel-step.visible { opacity: 1; }
+    </style>
+</head>
+<body class="bg-amber-50 text-amber-900">
+    <div class="container mx-auto p-4">
+        <header class="bg-amber-500 text-white p-6 rounded-lg shadow-lg mb-6">
+            <h1 class="text-3xl font-bold text-center">網路層：資料平面互動學習指南</h1>
+        </header>
+
+        <nav class="mb-6 bg-white p-3 rounded-lg shadow">
+            <ul class="flex flex-wrap justify-center gap-2">
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="overview">概覽</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="router-internals">路由器內部</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="ip-protocol">IP 協定</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="addressing">IP 定址</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="nat">網路位址轉換 (NAT)</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="ipv6">IPv6</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="generalized-forwarding">通用轉發與 SDN</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="middleboxes">中間盒</button></li>
+            </ul>
+        </nav>
+
+        <main id="main-content" class="bg-white p-6 rounded-lg shadow-lg min-h-[60vh]">
+            <!-- 概覽 -->
+            <section id="overview" class="content-section active">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">網路層概覽：資料平面</h2>
+                <p class="mb-3">本節介紹網路層的核心功能，特別是資料平面。網路層負責將資料段從發送主機傳輸到接收主機，而資料平面則處理路由器內部的本地轉發功能。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">網路層的兩個關鍵功能</h3>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">轉發 (Forwarding):</strong> 路由器將封包從其輸入鏈路移動到適當的輸出鏈路。這是一個本地、每路由器 (per-router) 的功能。</li>
+                    <li><strong class="font-semibold">路由 (Routing):</strong> 決定封包從源到目的地的整個路徑。這是一個網路範圍 (network-wide) 的邏輯，由路由演算法實現。</li>
+                </ul>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">資料平面 vs. 控制平面</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white border border-amber-200 rounded-lg">
+                        <thead>
+                            <tr class="bg-amber-100">
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">特性</th>
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">資料平面 (Data Plane)</th>
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">控制平面 (Control Plane)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="py-2 px-4 border-b border-amber-200">功能範圍</td>
+                                <td class="py-2 px-4 border-b border-amber-200">本地，每路由器功能</td>
+                                <td class="py-2 px-4 border-b border-amber-200">網路範圍邏輯</td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 px-4 border-b border-amber-200">決定</td>
+                                <td class="py-2 px-4 border-b border-amber-200">如何將資料報從輸入埠轉發到輸出埠</td>
+                                <td class="py-2 px-4 border-b border-amber-200">資料報如何在路由器之間路由</td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 px-4 border-b border-amber-200">實現方式</td>
+                                <td class="py-2 px-4 border-b border-amber-200">通常是硬體實現 (奈秒級)</td>
+                                <td class="py-2 px-4 border-b border-amber-200">傳統路由演算法 (路由器內) 或 SDN (遠端伺服器)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="mt-4">網路層服務模型：網際網路提供「盡力而為」(best effort) 的服務模型，不保證資料報的成功交付、時序、順序或頻寬。這種簡單性使其得以廣泛部署。</p>
+            </section>
+
+            <!-- 路由器內部 -->
+            <section id="router-internals" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">路由器內部結構</h2>
+                <p class="mb-3">路由器是網路層的核心設備，負責在網路中轉發資料報。本節將探討路由器的主要組成部分及其功能。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">高層架構概覽</h3>
+                <div class="diagram-box flex flex-col items-center justify-center p-4">
+                    <div class="text-center mb-2">路由處理器 (控制平面)</div>
+                    <div class="flex items-center justify-center w-full">
+                        <div class="flex flex-col items-center mx-4">
+                            <div class="w-16 h-16 bg-blue-200 rounded-full flex items-center justify-center text-sm font-bold">輸入埠</div>
+                            <div class="text-xs mt-1">線路終端、鏈路層協定、查詢、排隊</div>
+                        </div>
+                        <div class="text-3xl font-bold mx-4">&harr;</div>
+                        <div class="flex flex-col items-center mx-4">
+                            <div class="w-24 h-16 bg-green-200 rounded-lg flex items-center justify-center text-sm font-bold">高速交換結構</div>
+                            <div class="text-xs mt-1">將封包從輸入轉到輸出</div>
+                        </div>
+                        <div class="text-3xl font-bold mx-4">&harr;</div>
+                        <div class="flex flex-col items-center mx-4">
+                            <div class="w-16 h-16 bg-red-200 rounded-full flex items-center justify-center text-sm font-bold">輸出埠</div>
+                            <div class="text-xs mt-1">緩衝、鏈路層協定、線路終端</div>
+                        </div>
+                    </div>
+                    <div class="text-xs mt-2 text-center">資料平面 (硬體) 在奈秒級運作，控制平面 (軟體) 在毫秒級運作。</div>
+                </div>
+
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">輸入埠功能</h3>
+                <p class="mb-2">輸入埠負責接收資料報、執行轉發查詢，並將資料報傳遞給交換結構。</p>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">線路終端與鏈路層協定:</strong> 處理物理層和鏈路層的接收功能。</li>
+                    <li><strong class="font-semibold">查詢與轉發:</strong> 根據資料報頭部的資訊，查詢轉發表以確定輸出埠。這通常是分散式交換，目標是達到「線速」。</li>
+                    <li><strong class="font-semibold">輸入埠排隊:</strong> 如果資料報到達速度快於交換結構的處理速度，則會發生排隊。</li>
+                </ul>
+                <h4 class="text-lg font-semibold mt-3 mb-1 text-amber-600">最長前綴匹配 (Longest Prefix Matching)</h4>
+                <p class="mb-2">當查找給定目的位址的轉發表條目時，使用與目的位址匹配的最長位址前綴。這確保了資料報被路由到最精確的目的地。</p>
+                <div class="diagram-box overflow-x-auto">
+                    <p class="text-sm mb-1 text-center">點擊按鈕演示匹配過程</p>
+                    <table class="min-w-full border-collapse border border-amber-300 text-xs md:text-sm mb-2">
+                        <thead>
+                            <tr>
+                                <th class="border p-1 bg-amber-100">目的位址範圍</th>
+                                <th class="border p-1 bg-amber-100">鏈路介面</th>
+                            </tr>
+                        </thead>
+                        <tbody id="prefix-table-body">
+                            <tr data-prefix="11001000 00010111 00010*** ********" data-interface="0">
+                                <td class="border p-1">11001000 00010111 00010*** ********</td>
+                                <td class="border p-1">0</td>
+                            </tr>
+                            <tr data-prefix="11001000 00010111 00011000 ********" data-interface="1">
+                                <td class="border p-1">11001000 00010111 00011000 ********</td>
+                                <td class="border p-1">1</td>
+                            </tr>
+                            <tr data-prefix="11001000 00010111 00011*** ********" data-interface="2">
+                                <td class="border p-1">11001000 00010111 00011*** ********</td>
+                                <td class="border p-1">2</td>
+                            </tr>
+                            <tr data-prefix="otherwise" data-interface="3">
+                                <td class="border p-1">否則</td>
+                                <td class="border p-1">3</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="mb-2">
+                        <label for="dest-ip-input" class="block text-sm font-medium text-gray-700">輸入目的 IP (二進制):</label>
+                        <input type="text" id="dest-ip-input" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm" value="11001000000101110001011010100001">
+                    </div>
+                    <button id="match-prefix-btn" class="px-4 py-2 bg-amber-500 text-white rounded hover:bg-amber-600">執行匹配</button>
+                    <p id="match-result" class="mt-2 text-sm font-semibold text-amber-800"></p>
+                </div>
+
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">交換結構</h3>
+                <p class="mb-2">交換結構負責將資料報從輸入埠傳輸到適當的輸出埠。交換速率是衡量其性能的關鍵指標。</p>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">透過記憶體交換:</strong> 第一代路由器，CPU 直接控制交換，速度受記憶體頻寬限制。</li>
+                    <li><strong class="font-semibold">透過匯流排交換:</strong> 資料報透過共用匯流排從輸入埠記憶體傳輸到輸出埠記憶體，速度受匯流排頻寬限制。</li>
+                    <li><strong class="font-semibold">透過互連網路交換:</strong> 使用交叉開關 (Crossbar) 或 Clos 網路等互連網路，透過並行處理實現高速交換。</li>
+                </ul>
+
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">排隊與緩衝管理</h3>
+                <p class="mb-2">當資料報到達速度快於處理速度時，會在輸入或輸出埠發生排隊。這可能導致延遲和封包丟失。</p>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">輸入埠排隊 (Input Port Queuing):</strong> 如果交換結構慢於輸入埠的組合速度，會發生排隊。可能導致隊頭阻塞 (Head-of-the-Line blocking)。</li>
+                    <li><strong class="font-semibold">輸出埠排隊 (Output Port Queuing):</strong> 當資料報從交換結構到達速度快於鏈路傳輸速率時，需要緩衝。</li>
+                    <li><strong class="font-semibold">緩衝管理:</strong> 決定當緩衝區滿時丟棄哪些封包 (例如尾部丟棄、優先級丟棄)，以及如何標記封包以指示擁塞 (例如 ECN)。</li>
+                </ul>
+                <h4 class="text-lg font-semibold mt-3 mb-1 text-amber-600">封包排程</h4>
+                <p class="mb-2">決定接下來在鏈路上發送哪個封包的策略。</p>
+                <ul class="list-disc list-inside space-y-1">
+                    <li><strong class="font-semibold">先進先出 (FCFS / FIFO):</strong> 按照到達順序傳輸封包。</li>
+                    <li><strong class="font-semibold">優先級排程 (Priority Scheduling):</strong> 根據封包的類別優先傳輸高優先級的封包。</li>
+                    <li><strong class="font-semibold">循環排程 (Round Robin):</strong> 輪流從每個類別的隊列中發送一個封包。</li>
+                    <li><strong class="font-semibold">加權公平排隊 (Weighted Fair Queuing, WFQ):</strong> 廣義的循環排程，每個類別根據其權重獲得相應的服務量。</li>
+                </ul>
+            </section>
+
+            <!-- IP 協定 -->
+            <section id="ip-protocol" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">IP 協定 (Internet Protocol)</h2>
+                <p class="mb-3">IP 是網際網路的核心協定，負責資料報的格式化、定址和處理。它在網路中的每個設備上運行。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">IP 資料報格式 (IPv4)</h3>
+                <div class="diagram-box overflow-x-auto">
+                    <p class="text-sm mb-1 text-center">點擊欄位查看說明</p>
+                    <table class="min-w-full border-collapse border border-amber-300 text-xs md:text-sm">
+                        <tbody>
+                            <tr>
+                                <td class="datagram-field border p-1 text-center" data-description="IP 協定版本號 (例如 IPv4 為 4)">版本 (4位)</td>
+                                <td class="datagram-field border p-1 text-center" data-description="IP 報頭長度，以 4 位元組為單位">報頭長度 (4位)</td>
+                                <td class="datagram-field border p-1 text-center" data-description="服務類型，包含 DiffServ 和 ECN 位元">服務類型 (8位)</td>
+                                <td colspan="5" class="datagram-field border p-1 text-center" data-description="整個 IP 資料報的總長度，以位元組為單位">總長度 (16位)</td>
+                            </tr>
+                            <tr>
+                                <td colspan="3" class="datagram-field border p-1 text-center" data-description="用於識別相關的資料報片段">識別碼 (16位)</td>
+                                <td class="datagram-field border p-1 text-center" data-description="片段標誌 (例如，更多片段標誌)">標誌 (3位)</td>
+                                <td colspan="4" class="datagram-field border p-1 text-center" data-description="用於指示片段在原始資料報中的偏移量">片段偏移 (13位)</td>
+                            </tr>
+                            <tr>
+                                <td colspan="2" class="datagram-field border p-1 text-center" data-description="存活時間，每經過一個路由器減 1，為 0 時丟棄">TTL (8位)</td>
+                                <td colspan="2" class="datagram-field border p-1 text-center" data-description="上層協定 (例如 TCP 為 6，UDP 為 17)">協定 (8位)</td>
+                                <td colspan="4" class="datagram-field border p-1 text-center" data-description="對 IP 報頭計算的校驗和">報頭校驗和 (16位)</td>
+                            </tr>
+                            <tr>
+                                <td colspan="8" class="datagram-field border p-1 text-center" data-description="發送主機或路由器介面的 32 位元 IP 位址">來源 IP 位址 (32位)</td>
+                            </tr>
+                            <tr>
+                                <td colspan="8" class="datagram-field border p-1 text-center" data-description="目的主機或路由器介面的 32 位元 IP 位址">目的 IP 位址 (32位)</td>
+                            </tr>
+                            <tr>
+                                <td colspan="8" class="datagram-field border p-1 text-center" data-description="可選欄位，長度可變 (例如時間戳、記錄路徑)">選項 (可變長度)</td>
+                            </tr>
+                            <tr>
+                                <td colspan="8" class="datagram-field border p-4 text-center bg-amber-50" data-description="通常是 TCP 或 UDP 分段">負載資料 (可變長度)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="ip-field-description-tooltip" class="tooltip"></div>
+                <p class="mt-2 text-sm text-gray-600">IP 資料報最大長度為 64K 位元組，通常為 1500 位元組或更少。</p>
+            </section>
+
+            <!-- IP 定址 -->
+            <section id="addressing" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">IP 定址</h2>
+                <p class="mb-3">IP 位址是網路層的關鍵概念，用於唯一識別網路中的設備介面。本節將探討 IP 位址的結構、子網和 DHCP。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">IP 位址與介面</h3>
+                <p class="mb-2">IP 位址是一個 32 位元的識別碼，與每個主機或路由器的介面相關聯。介面是主機/路由器與物理鏈路之間的連接點。路由器通常有多個介面，主機通常有一到兩個。</p>
+                <p class="mb-2">點分十進制表示法 (例如 223.1.1.1) 將 32 位元位址分為四個 8 位元的組。</p>
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">子網 (Subnets)</h3>
+                <p class="mb-2">子網是指無需經過路由器即可物理上相互連接的設備介面集合。IP 位址具有結構：子網部分用於識別子網，主機部分用於識別子網內的主機。</p>
+                <p class="mb-2">CIDR (Classless InterDomain Routing) 允許子網部分具有任意長度，表示為 `a.b.c.d/x`，其中 `x` 是子網部分的位元數 (例如 `/24` 表示前 24 位是子網部分)。</p>
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">DHCP (Dynamic Host Configuration Protocol)</h3>
+                <p class="mb-3">DHCP 允許主機在加入網路時動態地從網路伺服器獲取 IP 位址，實現「隨插即用」。</p>
+                <div id="dhcp-process" class="space-y-2">
+                    <div class="process-step p-3 bg-amber-50 rounded border border-amber-200"><strong>步驟 1 (DHCP Discover):</strong> 新加入的主機廣播一個 DHCP Discover 訊息，尋找網路中的 DHCP 伺服器。</div>
+                    <div class="process-step p-3 bg-amber-50 rounded border border-amber-200"><strong>步驟 2 (DHCP Offer):</strong> DHCP 伺服器收到 Discover 訊息後，回覆一個 DHCP Offer 訊息，提供一個可用的 IP 位址、子網遮罩、預設閘道 (路由器位址) 和 DNS 伺服器位址等資訊。</div>
+                    <div class="process-step p-3 bg-amber-50 rounded border border-amber-200"><strong>步驟 3 (DHCP Request):</strong> 主機收到一個或多個 Offer 訊息後，選擇一個 Offer 並發送 DHCP Request 訊息，正式請求該 IP 位址。</div>
+                    <div class="process-step p-3 bg-amber-50 rounded border border-amber-200"><strong>步驟 4 (DHCP ACK):</strong> DHCP 伺服器收到 Request 訊息後，發送 DHCP ACK 訊息，確認分配該 IP 位址，並提供所有配置資訊。主機收到 ACK 後，配置其網路介面。</div>
+                </div>
+                <button id="animateDhcpBtn" class="mt-3 px-4 py-2 bg-amber-500 text-white rounded hover:bg-amber-600">演示 DHCP 過程</button>
+            </section>
+
+            <!-- NAT -->
+            <section id="nat" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">網路位址轉換 (NAT)</h2>
+                <p class="mb-3">NAT 允許本地網路中的所有設備共享一個公共 IPv4 位址，從而解決 IPv4 位址耗盡的問題，並提供一定的安全性。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">NAT 的工作原理</h3>
+                <p class="mb-2">NAT 路由器透明地將本地網路 (使用私有 IP 位址空間，如 10.0.0.0/8) 中的資料報的來源 IP 位址和埠號替換為公共 IP 位址和新的埠號，反之亦然。</p>
+                <h4 class="text-lg font-semibold mt-3 mb-1 text-amber-600">NAT 轉換範例</h4>
+                <div class="diagram-box overflow-x-auto">
+                    <p class="text-sm mb-1 text-center">點擊按鈕演示 NAT 轉換過程</p>
+                    <div class="flex items-center justify-center mb-4">
+                        <div class="text-center mx-4">
+                            <div class="font-bold">本地主機</div>
+                            <div class="text-sm">10.0.0.1:3345</div>
+                        </div>
+                        <div class="text-3xl font-bold">&rarr;</div>
+                        <div class="text-center mx-4">
+                            <div class="font-bold">NAT 路由器</div>
+                            <div class="text-sm">公共 IP: 138.76.29.7</div>
+                        </div>
+                        <div class="text-3xl font-bold">&rarr;</div>
+                        <div class="text-center mx-4">
+                            <div class="font-bold">外部伺服器</div>
+                            <div class="text-sm">128.119.40.186:80</div>
+                        </div>
+                    </div>
+                    <table class="min-w-full border-collapse border border-amber-300 text-xs md:text-sm mb-2">
+                        <thead>
+                            <tr class="bg-amber-100">
+                                <th class="py-1 px-2 border-b border-amber-200 text-left">WAN 側位址 (NAT IP, 新埠號)</th>
+                                <th class="py-1 px-2 border-b border-amber-200 text-left">LAN 側位址 (內部 IP, 埠號)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="nat-table-body">
+                            <tr id="nat-row-1" class="nat-table-row">
+                                <td class="border p-1">138.76.29.7:5001</td>
+                                <td class="border p-1">10.0.0.1:3345</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div id="nat-steps" class="space-y-2">
+                        <div class="process-step p-3 bg-amber-50 rounded border border-amber-200"><strong>步驟 1 (發送):</strong> 本地主機 10.0.0.1:3345 發送資料報到外部伺服器 128.119.40.186:80。</div>
+                        <div class="process-step p-3 bg-amber-50 rounded border border-amber-200"><strong>步驟 2 (NAT 轉換 - 出):</strong> NAT 路由器將資料報的來源位址從 10.0.0.1:3345 轉換為 138.76.29.7:5001，並在 NAT 轉換表中記錄此對應關係。</div>
+                        <div class="process-step p-3 bg-amber-50 rounded border border-amber-200"><strong>步驟 3 (回覆):</strong> 外部伺服器收到資料報，並回覆到 138.76.29.7:5001。</div>
+                        <div class="process-step p-3 bg-amber-50 rounded border border-amber-200"><strong>步驟 4 (NAT 轉換 - 入):</strong> NAT 路由器收到回覆，查詢轉換表，將目的位址從 138.76.29.7:5001 轉換回 10.0.0.1:3345，然後轉發給本地主機。</div>
+                    </div>
+                    <button id="animateNatBtn" class="mt-3 px-4 py-2 bg-amber-500 text-white rounded hover:bg-amber-600">演示 NAT 轉換</button>
+                </div>
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">NAT 的優缺點</h3>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">優點:</strong> 節省公共 IP 位址、靈活更改內部網路配置、提供一定安全保護。</li>
+                    <li><strong class="font-semibold">缺點:</strong> 違反端到端原則 (End-to-End Argument)、可能導致 NAT 穿越問題 (例如 P2P 應用)。</li>
+                </ul>
+            </section>
+
+            <!-- IPv6 -->
+            <section id="ipv6" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">IPv6</h2>
+                <p class="mb-3">IPv6 是下一代網際網路協定，旨在解決 IPv4 位址空間耗盡的問題，並引入了多項改進。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">IPv6 資料報格式</h3>
+                <div class="diagram-box overflow-x-auto">
+                    <p class="text-sm mb-1 text-center">點擊欄位查看說明</p>
+                    <table class="min-w-full border-collapse border border-amber-300 text-xs md:text-sm">
+                        <tbody>
+                            <tr>
+                                <td class="datagram-field border p-1 text-center" data-description="IP 協定版本號 (IPv6 為 6)">版本 (4位)</td>
+                                <td class="datagram-field border p-1 text-center" data-description="資料報在流中的優先級">優先級 (8位)</td>
+                                <td colspan="6" class="datagram-field border p-1 text-center" data-description="用於識別屬於同一流的資料報">流標籤 (20位)</td>
+                            </tr>
+                            <tr>
+                                <td colspan="4" class="datagram-field border p-1 text-center" data-description="負載的長度 (不含報頭)">負載長度 (16位)</td>
+                                <td colspan="2" class="datagram-field border p-1 text-center" data-description="下一個報頭的類型 (例如 TCP, UDP)">下一個報頭 (8位)</td>
+                                <td colspan="2" class="datagram-field border p-1 text-center" data-description="跳數限制，每經過一個路由器減 1">跳數限制 (8位)</td>
+                            </tr>
+                            <tr>
+                                <td colspan="8" class="datagram-field border p-1 text-center" data-description="來源主機或路由器介面的 128 位元 IPv6 位址">來源位址 (128位)</td>
+                            </tr>
+                            <tr>
+                                <td colspan="8" class="datagram-field border p-1 text-center" data-description="目的主機或路由器介面的 128 位元 IPv6 位址">目的位址 (128位)</td>
+                            </tr>
+                            <tr>
+                                <td colspan="8" class="datagram-field border p-4 text-center bg-amber-50" data-description="TCP 或 UDP 分段">負載 (資料)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="ipv6-field-description-tooltip" class="tooltip"></div>
+                <p class="mt-2 text-sm text-gray-600">與 IPv4 相比，IPv6 報頭中移除了校驗和、分段/重組相關欄位和選項欄位，以提高處理效率。</p>
+
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">從 IPv4 到 IPv6 的過渡：隧道 (Tunneling)</h3>
+                <p class="mb-3">由於不可能同時升級所有路由器，IPv4 和 IPv6 路由器混合運作的網路需要過渡機制。隧道技術允許 IPv6 資料報作為 IPv4 資料報的負載，在 IPv4 路由器之間傳輸。</p>
+                <div class="diagram-box overflow-x-auto">
+                    <p class="text-sm mb-1 text-center">點擊按鈕演示隧道過程</p>
+                    <div class="flex flex-col items-center justify-center">
+                        <div class="flex items-center space-x-4 mb-4">
+                            <div class="text-center">
+                                <div class="font-bold">IPv6 路由器 A</div>
+                                <div class="text-sm">IPv6</div>
+                            </div>
+                            <div class="text-3xl font-bold">&rarr;</div>
+                            <div class="text-center">
+                                <div class="font-bold">IPv6/v4 路由器 B</div>
+                                <div class="text-sm">IPv6/IPv4</div>
+                            </div>
+                            <div class="text-3xl font-bold">&rarr;</div>
+                            <div class="text-center">
+                                <div class="font-bold">IPv4 網路</div>
+                                <div class="text-sm">(中間路由器 C, D)</div>
+                            </div>
+                            <div class="text-3xl font-bold">&rarr;</div>
+                            <div class="text-center">
+                                <div class="font-bold">IPv6/v4 路由器 E</div>
+                                <div class="text-sm">IPv6/IPv4</div>
+                            </div>
+                            <div class="text-3xl font-bold">&rarr;</div>
+                            <div class="text-center">
+                                <div class="font-bold">IPv6 路由器 F</div>
+                                <div class="text-sm">IPv6</div>
+                            </div>
+                        </div>
+                        <div id="tunnel-steps" class="space-y-3 w-full">
+                            <div class="tunnel-step p-3 bg-amber-50 rounded border border-amber-200">
+                                <p><strong>步驟 1 (A 到 B):</strong> IPv6 路由器 A 發送一個 IPv6 資料報到 IPv6/v4 路由器 B。</p>
+                                <div class="text-xs text-gray-600 mt-1">資料報: [IPv6 報頭 | IPv6 負載]</div>
+                            </div>
+                            <div class="tunnel-step p-3 bg-amber-50 rounded border border-amber-200">
+                                <p><strong>步驟 2 (B 進入隧道):</strong> IPv6/v4 路由器 B 將 IPv6 資料報作為負載，封裝到一個 IPv4 資料報中，並發送給 IPv4 網路中的下一個路由器。</p>
+                                <div class="text-xs text-gray-600 mt-1">資料報: [IPv4 報頭 | [IPv6 報頭 | IPv6 負載]]</div>
+                            </div>
+                            <div class="tunnel-step p-3 bg-amber-50 rounded border border-amber-200">
+                                <p><strong>步驟 3 (在 IPv4 網路中):</strong> 封裝後的 IPv4 資料報在 IPv4 網路中像普通 IPv4 資料報一樣被路由。</p>
+                            </div>
+                            <div class="tunnel-step p-3 bg-amber-50 rounded border border-amber-200">
+                                <p><strong>步驟 4 (E 離開隧道):</strong> IPv6/v4 路由器 E 收到 IPv4 資料報，解封裝，取出其中的 IPv6 資料報，並轉發給 IPv6 路由器 F。</p>
+                                <div class="text-xs text-gray-600 mt-1">資料報: [IPv6 報頭 | IPv6 負載]</div>
+                            </div>
+                            <div class="tunnel-step p-3 bg-amber-50 rounded border border-amber-200">
+                                <p><strong>步驟 5 (E 到 F):</strong> IPv6 資料報到達 IPv6 路由器 F。</p>
+                            </div>
+                        </div>
+                    </div>
+                    <button id="animateTunnelBtn" class="mt-3 px-4 py-2 bg-amber-500 text-white rounded hover:bg-amber-600">演示隧道過程</button>
+                </div>
+            </section>
+
+            <!-- 通用轉發與 SDN -->
+            <section id="generalized-forwarding" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">通用轉發與 SDN</h2>
+                <p class="mb-3">傳統的轉發主要基於目的 IP 位址。通用轉發 (Generalized Forwarding) 和軟體定義網路 (SDN) 引入了更靈活和可程式化的網路控制方式。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">匹配-動作 (Match-Action) 抽象</h3>
+                <p class="mb-2">路由器包含一個轉發表 (也稱為流表)，定義了「匹配-動作」規則。它根據到達封包報頭中的位元進行匹配，然後執行相應的動作。</p>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">匹配:</strong> 可以是任何鏈路層、網路層或傳輸層報頭欄位的值模式。</li>
+                    <li><strong class="font-semibold">動作:</strong> 對匹配的封包執行操作，例如丟棄、轉發到特定埠、修改報頭或發送給控制器。</li>
+                    <li><strong class="font-semibold">優先級:</strong> 用於解決重疊匹配模式的歧義。</li>
+                    <li><strong class="font-semibold">計數器:</strong> 記錄匹配的位元組數和封包數。</li>
+                </ul>
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">OpenFlow</h3>
+                <p class="mb-2">OpenFlow 是一種實現匹配-動作抽象的開放標準，它定義了流表條目中可以匹配的報頭欄位和可以執行的動作。這使得網路設備可以由遠端控制器進行程式化，實現網路範圍的行為。</p>
+                <p class="text-sm text-gray-600">OpenFlow 統一了路由器、交換機、防火牆和 NAT 等不同類型設備的功能。</p>
+            </section>
+
+            <!-- 中間盒 -->
+            <section id="middleboxes" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">中間盒 (Middleboxes)</h2>
+                <p class="mb-3">中間盒是指在源主機和目的主機之間資料路徑上執行 IP 路由器正常標準功能之外的任何中間設備。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">常見的中間盒功能</h3>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">防火牆 (Firewalls):</strong> 過濾流量以增強安全性。</li>
+                    <li><strong class="font-semibold">入侵檢測系統 (IDS):</strong> 監控網路流量以檢測惡意活動。</li>
+                    <li><strong class="font-semibold">網路位址轉換 (NAT):</strong> 允許多個設備共享一個公共 IP 位址。</li>
+                    <li><strong class="font-semibold">負載平衡器 (Load Balancers):</strong> 將流量分發到多個伺服器以優化性能。</li>
+                    <li><strong class="font-semibold">快取 (Caches):</strong> 儲存常用內容以減少延遲和頻寬使用。</li>
+                </ul>
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">IP 沙漏模型與中間盒</h3>
+                <p class="mb-2">網際網路的「沙漏模型」描述了其核心的 IP 協定作為一個「窄腰」，連接了上層的許多應用層和傳輸層協定，以及下層的許多鏈路層和物理層協定。</p>
+                <div class="diagram-box flex flex-col items-center justify-center p-4">
+                    <div class="text-center font-bold mb-2">IP 沙漏模型 (含中間盒)</div>
+                    <div class="relative w-48 h-64 bg-blue-100 border-2 border-blue-500 rounded-full flex flex-col items-center justify-between py-4">
+                        <div class="text-sm text-center">HTTP SMTP RTP<br>QUIC DASH</div>
+                        <div class="text-sm text-center">TCP UDP</div>
+                        <div class="absolute inset-x-0 top-1/2 -translate-y-1/2 h-8 bg-blue-300 flex items-center justify-center text-sm font-bold">IP</div>
+                        <div class="absolute inset-x-0 top-1/2 -translate-y-1/2 h-8 flex flex-col items-center justify-center text-xs text-blue-800">
+                            <div class="mt-10">NAT</div>
+                            <div class="mt-2">Caching</div>
+                            <div class="mt-2">Firewalls</div>
+                            <div class="mt-2">NFV</div>
+                        </div>
+                        <div class="text-sm text-center mt-12">Ethernet PPP ...<br>PDCP WiFi Bluetooth</div>
+                        <div class="text-sm text-center">copper radio fiber</div>
+                    </div>
+                    <p class="text-xs mt-2 text-center">中間盒位於 IP 層附近，擴展了網路的功能。</p>
+                </div>
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">網際網路的架構原則</h3>
+                <p class="mb-2">網際網路的設計基於幾個核心信念：簡單連接、IP 協定作為「窄腰」，以及將智慧和複雜性放置在網路邊緣 (端到端原則)。</p>
+                <p class="mb-2">「端到端原則」指出，某些功能只有在通訊系統的端點應用程式的知識和幫助下才能完全正確地實現。因此，將這些功能作為通訊系統本身的功能提供是不可能的 (儘管不完整的版本可能作為性能增強有用)。</p>
+            </section>
+        </main>
+
+        <footer class="mt-8 text-center text-sm text-amber-700">
+            <p>&copy; 2025 互動式網路層資料平面學習指南。基於 Kurose & Ross 教材內容製作。</p>
+        </footer>
+    </div>
+
+    <script>
+        const navButtons = document.querySelectorAll('.nav-button');
+        const contentSections = document.querySelectorAll('.content-section');
+        const mainContent = document.getElementById('main-content');
+
+        function showSection(targetId) {
+            contentSections.forEach(section => {
+                section.classList.remove('active');
+            });
+            navButtons.forEach(button => {
+                button.classList.remove('active');
+            });
+
+            const targetSection = document.getElementById(targetId);
+            const targetButton = document.querySelector(`.nav-button[data-target="${targetId}"]`);
+
+            if (targetSection) {
+                targetSection.classList.add('active');
+                mainContent.scrollTop = 0;
+                mainContent.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+            if (targetButton) {
+                targetButton.classList.add('active');
+            }
+        }
+
+        navButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const targetId = button.dataset.target;
+                showSection(targetId);
+            });
+        });
+
+        if (navButtons.length > 0) {
+            showSection(navButtons[0].dataset.target);
+        }
+
+        // Tooltip for IP Datagram fields
+        const ipFields = document.querySelectorAll('#ip-protocol .datagram-field, #ipv6 .datagram-field');
+        const ipTooltip = document.getElementById('ip-field-description-tooltip') || document.getElementById('ipv6-field-description-tooltip');
+        ipFields.forEach(field => {
+            field.addEventListener('mouseenter', (e) => {
+                ipTooltip.textContent = field.dataset.description;
+                ipTooltip.style.display = 'block';
+                const rect = field.getBoundingClientRect();
+                const mainRect = mainContent.getBoundingClientRect();
+                ipTooltip.style.left = `${e.clientX - mainRect.left + 15}px`;
+                ipTooltip.style.top = `${e.clientY - mainRect.top + 15}px`;
+            });
+            field.addEventListener('mouseleave', () => {
+                ipTooltip.style.display = 'none';
+            });
+        });
+
+        // Longest Prefix Matching Logic
+        const destIpInput = document.getElementById('dest-ip-input');
+        const matchPrefixBtn = document.getElementById('match-prefix-btn');
+        const matchResult = document.getElementById('match-result');
+        const prefixTableBody = document.getElementById('prefix-table-body');
+
+        if (matchPrefixBtn) {
+            matchPrefixBtn.addEventListener('click', () => {
+                const inputIp = destIpInput.value.trim().replace(/\s/g, ''); // Remove spaces
+                let bestMatchLength = -1;
+                let bestMatchInterface = '3'; // Default to "otherwise"
+
+                // Clear previous highlights
+                Array.from(prefixTableBody.children).forEach(row => {
+                    row.classList.remove('bg-amber-100');
+                    row.classList.remove('font-bold');
+                });
+
+                Array.from(prefixTableBody.children).forEach(row => {
+                    const prefixPattern = row.dataset.prefix.replace(/\s/g, '').replace(/\*/g, '.'); // Replace * with . for regex
+                    const interfaceNum = row.dataset.interface;
+
+                    if (prefixPattern === 'otherwise') {
+                        // Handle 'otherwise' as a fallback
+                        return;
+                    }
+
+                    // Convert pattern to regex for matching
+                    const regex = new RegExp(`^${prefixPattern.replace(/\./g, '\\d')}`); // Replace . with \d for any digit
+
+                    // Check if the input IP starts with the prefix pattern
+                    let currentMatchLength = 0;
+                    let isMatch = true;
+                    for (let i = 0; i < prefixPattern.length; i++) {
+                        if (prefixPattern[i] === '*') {
+                            // Wildcard, matches any bit, but doesn't contribute to length
+                            continue;
+                        }
+                        if (prefixPattern[i] === inputIp[i]) {
+                            currentMatchLength++;
+                        } else {
+                            isMatch = false;
+                            break;
+                        }
+                    }
+
+                    if (isMatch && inputIp.startsWith(prefixPattern.replace(/\./g, ''))) { // Simple string startsWith check for actual bits
+                        if (currentMatchLength > bestMatchLength) {
+                            bestMatchLength = currentMatchLength;
+                            bestMatchInterface = interfaceNum;
+                        }
+                    }
+                });
+
+                // Highlight the best matching row
+                Array.from(prefixTableBody.children).forEach(row => {
+                    const prefixPattern = row.dataset.prefix.replace(/\s/g, '').replace(/\*/g, '.');
+                    const interfaceNum = row.dataset.interface;
+                    if (interfaceNum === bestMatchInterface && (prefixPattern === 'otherwise' || inputIp.startsWith(prefixPattern.replace(/\./g, '')))) {
+                        row.classList.add('bg-amber-100', 'font-bold');
+                    }
+                });
+
+                matchResult.textContent = `匹配到的鏈路介面: ${bestMatchInterface}`;
+            });
+        }
+
+
+        // DHCP Process Animation
+        const dhcpSteps = document.querySelectorAll('#dhcp-process .process-step');
+        const animateDhcpBtn = document.getElementById('animateDhcpBtn');
+        let currentDhcpStep = 0;
+        let dhcpInterval;
+
+        function showNextDhcpStep() {
+            if (currentDhcpStep < dhcpSteps.length) {
+                dhcpSteps[currentDhcpStep].classList.add('visible');
+                currentDhcpStep++;
+            } else {
+                clearInterval(dhcpInterval);
+            }
+        }
+
+        if (animateDhcpBtn) {
+            animateDhcpBtn.addEventListener('click', () => {
+                currentDhcpStep = 0;
+                dhcpSteps.forEach(step => step.classList.remove('visible'));
+                clearInterval(dhcpInterval);
+                dhcpInterval = setInterval(showNextDhcpStep, 1000);
+            });
+        }
+
+        // NAT Translation Animation
+        const natSteps = document.querySelectorAll('#nat-steps .process-step');
+        const animateNatBtn = document.getElementById('animateNatBtn');
+        const natTableRow = document.getElementById('nat-row-1');
+        let currentNatStep = 0;
+        let natInterval;
+
+        function showNextNatStep() {
+            if (currentNatStep < natSteps.length) {
+                natSteps[currentNatStep].classList.add('visible');
+                if (currentNatStep === 1) { // Step where NAT table is used
+                    natTableRow.classList.add('highlight');
+                } else {
+                    natTableRow.classList.remove('highlight');
+                }
+                currentNatStep++;
+            } else {
+                clearInterval(natInterval);
+                natTableRow.classList.remove('highlight');
+            }
+        }
+
+        if (animateNatBtn) {
+            animateNatBtn.addEventListener('click', () => {
+                currentNatStep = 0;
+                natSteps.forEach(step => step.classList.remove('visible'));
+                natTableRow.classList.remove('highlight');
+                clearInterval(natInterval);
+                natInterval = setInterval(showNextNatStep, 1500);
+            });
+        }
+
+        // IPv6 Tunneling Animation
+        const tunnelSteps = document.querySelectorAll('#tunnel-steps .tunnel-step');
+        const animateTunnelBtn = document.getElementById('animateTunnelBtn');
+        let currentTunnelStep = 0;
+        let tunnelInterval;
+
+        function showNextTunnelStep() {
+            if (currentTunnelStep < tunnelSteps.length) {
+                tunnelSteps[currentTunnelStep].classList.add('visible');
+                currentTunnelStep++;
+            } else {
+                clearInterval(tunnelInterval);
+            }
+        }
+
+        if (animateTunnelBtn) {
+            animateTunnelBtn.addEventListener('click', () => {
+                currentTunnelStep = 0;
+                tunnelSteps.forEach(step => step.classList.remove('visible'));
+                clearInterval(tunnelInterval);
+                tunnelInterval = setInterval(showNextTunnelStep, 1500);
+            });
+        }
+
+    </script>
+</body>
+</html>

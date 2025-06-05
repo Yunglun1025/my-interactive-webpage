@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>互動式網路層控制平面學習應用程式</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: Warm Harmony -->
+    <!-- Application Structure Plan: The SPA uses a thematic navigation structure with sections for Overview, Routing Protocols Intro, Link State (Dijkstra), Distance Vector, Intra-AS (OSPF), Inter-AS (BGP), SDN Control Plane, and Network Management. This structure is chosen to logically group the control plane concepts from the lecture slides. Key interactions include step-by-step animations for Dijkstra's algorithm and Distance Vector algorithm, and interactive diagrams for OSPF and BGP concepts. A new floating chat window with an AI assistant is added, offering contextual questions based on the current section, enhancing user understanding and direct query capabilities. User flow allows navigation between these core topics for focused learning and visual understanding of algorithms. -->
+    <!-- Visualization & Content Choices:
+        - Overview: Text summaries, comparison table (HTML). Goal: Inform. Interaction: None.
+        - Routing Protocols Intro: Text, graph abstraction (HTML/CSS), classification (HTML). Goal: Inform. Interaction: None.
+        - Link State (Dijkstra): Text, algorithm steps (HTML), example table (HTML/JS for step-by-step fill), graph visualization (HTML/CSS/JS for path highlighting). Goal: Explain algorithm. Interaction: Buttons to step through algorithm iterations.
+        - Distance Vector: Text, Bellman-Ford equation (HTML), example table (HTML/JS for step-by-step fill), graph visualization (HTML/CSS/JS for path highlighting). Goal: Explain algorithm. Interaction: Buttons to step through algorithm iterations.
+        - Intra-AS (OSPF): Text, hierarchical OSPF diagram (HTML/CSS). Goal: Inform. Interaction: None.
+        - Inter-AS (BGP): Text, eBGP/iBGP diagram (HTML/CSS), path advertisement (HTML/CSS/JS for animation), route selection criteria (HTML). Goal: Explain protocol. Interaction: Buttons to animate path advertisement.
+        - SDN Control Plane: Text, centralized control diagram (HTML/CSS). Goal: Inform. Interaction: None.
+        - Internet Control Message Protocol (ICMP): Text. Goal: Inform. Interaction: None.
+        - Network Management: Text (SNMP, NETCONF/YANG). Goal: Inform. Interaction: None.
+        - AI Assistant: Text input/output, dynamically updated message log. Goal: Q&A, content clarification. Interaction: Text input, send button, AI response.
+        All visualizations use HTML/CSS/Tailwind or Chart.js (Canvas). NO SVG/Mermaid. Justification: Enhance understanding through interactive exploration and dynamic visualization of algorithms and protocol processes, augmented by direct AI assistance. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .content-section { display: none; }
+        .content-section.active { display: block; }
+        .nav-button { transition: all 0.3s ease; }
+        .nav-button.active { background-color: #fbbf24; color: #78350f; }
+        .nav-button:hover { background-color: #f59e0b; }
+        .diagram-box { border: 1px solid #e5e7eb; padding: 10px; margin-top: 10px; border-radius: 8px; background-color: #f9fafb; }
+        .algorithm-step { opacity: 0.3; transition: opacity 0.5s ease-in-out; margin-bottom:10px; padding:10px; border:1px solid #ccc; border-radius:5px; }
+        .algorithm-step.visible { opacity: 1; }
+        .node-circle {
+            width: 40px;
+            height: 40px;
+            background-color: #a7f3d0; /* green-200 */
+            border: 2px solid #059669; /* green-600 */
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            position: absolute;
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+        .node-circle.highlight { background-color: #fcd34d; border-color: #d97706; } /* amber-300 / amber-600 */
+        .link-line {
+            position: absolute;
+            height: 2px;
+            background-color: #6b7280; /* gray-500 */
+            transform-origin: 0 0;
+            transition: background-color 0.3s;
+        }
+        .link-line.highlight { background-color: #ef4444; } /* red-500 */
+        .link-cost {
+            position: absolute;
+            background-color: white;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            color: #374151; /* gray-700 */
+        }
+        .table-highlight { background-color: #fffbeb; } /* amber-50 */
+        .dv-node {
+            width: 50px;
+            height: 50px;
+            background-color: #a7f3d0; /* green-200 */
+            border: 2px solid #059669; /* green-600 */
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            position: absolute;
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+        .dv-link {
+            position: absolute;
+            height: 2px;
+            background-color: #6b7280; /* gray-500 */
+            transform-origin: 0 0;
+            transition: background-color 0.3s;
+        }
+        .dv-link.active { background-color: #f59e0b; } /* amber-500 */
+        .dv-link-cost {
+            position: absolute;
+            background-color: white;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            color: #374151; /* gray-700 */
+        }
+        .dv-message-arrow {
+            position: absolute;
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-bottom: 12px solid #f59e0b; /* amber-500 */
+            transform: rotate(90deg); /* Point right */
+            transition: opacity 0.3s;
+            opacity: 0;
+            z-index: 5;
+        }
+        .dv-message-arrow.active { opacity: 1; }
+
+        /* BGP animation */
+        .bgp-node {
+            width: 40px;
+            height: 40px;
+            background-color: #a7f3d0; /* green-200 */
+            border: 2px solid #059669; /* green-600 */
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            position: absolute;
+        }
+        .bgp-link {
+            position: absolute;
+            height: 2px;
+            background-color: #6b7280; /* gray-500 */
+            transform-origin: 0 0;
+        }
+        .bgp-path-highlight {
+            position: absolute;
+            height: 4px;
+            background-color: #ef4444; /* red-500 */
+            transform-origin: 0 0;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+        }
+        .bgp-path-highlight.visible {
+            opacity: 1;
+        }
+        .bgp-message {
+            position: absolute;
+            background-color: #f59e0b; /* amber-500 */
+            color: white;
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            z-index: 10;
+        }
+        .bgp-message.visible {
+            opacity: 1;
+        }
+
+        /* Chatbot specific styles */
+        .chat-button {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #f59e0b;
+            color: white;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            transition: background-color 0.3s ease;
+        }
+        .chat-button:hover { background-color: #d97706; }
+
+        .chat-window {
+            position: fixed;
+            bottom: 90px;
+            right: 20px;
+            width: 350px;
+            height: 450px;
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            z-index: 999;
+            overflow: hidden;
+            transform: translateY(100%);
+            opacity: 0;
+            transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+        }
+        .chat-window.open {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        .chat-header {
+            background-color: #f59e0b;
+            color: white;
+            padding: 12px 16px;
+            font-weight: bold;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .chat-close-button {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+        }
+        .chat-messages {
+            flex-grow: 1;
+            padding: 15px;
+            overflow-y: auto;
+            background-color: #f9fafb;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .chat-input-area {
+            display: flex;
+            padding: 15px;
+            border-top: 1px solid #e5e7eb;
+        }
+        .chat-input {
+            flex-grow: 1;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 14px;
+            resize: none;
+            min-height: 40px;
+            max-height: 80px; /* Limit input height */
+            overflow-y: auto;
+        }
+        .chat-send-button {
+            background-color: #f59e0b;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 15px;
+            margin-left: 10px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        .chat-send-button:hover:not(:disabled) { background-color: #d97706; }
+        .chat-send-button:disabled { background-color: #ccc; cursor: not-allowed; }
+
+        .message-bubble {
+            padding: 8px 12px;
+            border-radius: 12px;
+            margin-bottom: 8px;
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+        .message-user {
+            background-color: #bfdbfe; /* blue-200 */
+            align-self: flex-end;
+            margin-left: auto;
+        }
+        .message-bot {
+            background-color: #e0f2fe; /* light blue-100 */
+            align-self: flex-start;
+            margin-right: auto;
+        }
+        .message-loading {
+            background-color: #e5e7eb;
+            color: #6b7280;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body class="bg-amber-50 text-amber-900">
+    <div class="container mx-auto p-4">
+        <header class="bg-amber-500 text-white p-6 rounded-lg shadow-lg mb-6">
+            <h1 class="text-3xl font-bold text-center">網路層：控制平面互動學習指南</h1>
+        </header>
+
+        <nav class="mb-6 bg-white p-3 rounded-lg shadow">
+            <ul class="flex flex-wrap justify-center gap-2">
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="overview">概覽</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="routing-intro">路由協定簡介</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="dijkstra">鏈路狀態 (Dijkstra)</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="distance-vector">距離向量</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="intra-as">自治系統內路由 (OSPF)</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="inter-as">自治系統間路由 (BGP)</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="sdn">SDN 控制平面</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="icmp">ICMP</button></li>
+                <li><button class="nav-button px-4 py-2 bg-amber-200 text-amber-800 rounded-md font-semibold" data-target="network-mgmt">網路管理</button></li>
+            </ul>
+        </nav>
+
+        <main id="main-content" class="bg-white p-6 rounded-lg shadow-lg min-h-[60vh]">
+            <!-- 概覽 -->
+            <section id="overview" class="content-section active">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">網路層控制平面概覽</h2>
+                <p class="mb-3">本節介紹網路層的控制平面，它負責決定資料報在網路中的路徑。控制平面與資料平面協同工作，共同實現網路的轉發功能。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">控制平面與資料平面的關係</h3>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">資料平面 (Data Plane):</strong> 路由器內部的本地功能，決定資料報如何從輸入埠轉發到輸出埠。</li>
+                    <li><strong class="font-semibold">控制平面 (Control Plane):</strong> 網路範圍的邏輯，決定資料報在路由器之間如何路由，以從源主機到達目的主機。</li>
+                </ul>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">控制平面的兩種方法</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white border border-amber-200 rounded-lg">
+                        <thead>
+                            <tr class="bg-amber-100">
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">方法</th>
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">描述</th>
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">實現</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="py-2 px-4 border-b border-amber-200">每路由器控制 (Per-router Control)</td>
+                                <td class="py-2 px-4 border-b border-amber-200">每個路由器獨立運行路由演算法組件，相互交互以計算轉發表。</td>
+                                <td class="py-2 px-4 border-b border-amber-200">傳統路由演算法 (例如 OSPF, BGP)</td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 px-4 border-b border-amber-200">邏輯集中式控制 (Logically Centralized Control)</td>
+                                <td class="py-2 px-4 border-b border-amber-200">一個遠端控制器計算並安裝轉發表到網路中的路由器。</td>
+                                <td class="py-2 px-4 border-b border-amber-200">軟體定義網路 (SDN)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="mt-4">本章將深入探討傳統路由演算法 (鏈路狀態與距離向量)、OSPF、BGP，以及 SDN 控制平面等內容。</p>
+            </section>
+
+            <!-- 路由協定簡介 -->
+            <section id="routing-intro" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">路由協定簡介</h2>
+                <p class="mb-3">路由協定的目標是確定從發送主機到接收主機的「良好」路徑，通常是成本最低、最快或最不擁塞的路徑。網路通常被抽象為圖 (Graph)，其中節點代表路由器，邊代表鏈路，邊的權重代表鏈路成本。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">路由演算法分類</h3>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">靜態路由 (Static):</strong> 路徑隨時間變化緩慢，通常由管理員手動配置。</li>
+                    <li><strong class="font-semibold">動態路由 (Dynamic):</strong> 路徑變化較快，透過週期性更新或響應鏈路成本變化來調整。</li>
+                </ul>
+                <h4 class="text-lg font-semibold mt-3 mb-1 text-amber-600">資訊獲取方式</h4>
+                <ul class="list-disc list-inside space-y-1">
+                    <li><strong class="font-semibold">全域 (Global):</strong> 所有路由器都擁有完整的網路拓撲和鏈路成本資訊。例如：**鏈路狀態 (Link State) 演算法**。</li>
+                    <li><strong class="font-semibold">分散式 (Decentralized):</strong> 路由器最初只知道其與鄰居的鏈路成本，透過迭代過程與鄰居交換資訊。例如：**距離向量 (Distance Vector) 演算法**。</li>
+                </ul>
+            </section>
+
+            <!-- 鏈路狀態 (Dijkstra) -->
+            <section id="dijkstra" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">鏈路狀態路由演算法 (Dijkstra)</h2>
+                <p class="mb-3">Dijkstra 演算法是一種全域、集中式的路由演算法，用於計算從一個節點到所有其他節點的最小成本路徑。每個路由器透過「鏈路狀態廣播」獲取完整的網路拓撲資訊，然後獨立運行此演算法。</p>
+
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">Dijkstra 演算法步驟</h3>
+                <div class="diagram-box">
+                    <p class="text-sm mb-1">目標：從源節點 `u` 計算到所有其他節點的最小成本路徑。</p>
+                    <div id="dijkstra-steps" class="space-y-2">
+                        <div class="algorithm-step p-3 bg-amber-50 rounded border border-amber-200">
+                            <strong>步驟 0 (初始化):</strong>
+                            <ul class="list-disc list-inside ml-4 mt-1">
+                                <li>$N'$ = {u} (已確定最小成本路徑的節點集合，初始只包含源節點 u)</li>
+                                <li>對於所有鄰居 i，設定 $D(i) = c_{u,i}$ (從 u 到 i 的直接鏈路成本)，否則 $D(i) = \infty$。</li>
+                                <li>$p(i)$ 為前驅節點 (初始為 u)。</li>
+                            </ul>
+                        </div>
+                        <div class="algorithm-step p-3 bg-amber-50 rounded border border-amber-200">
+                            <strong>步驟 1 (循環):</strong>
+                            <ul class="list-disc list-inside ml-4 mt-1">
+                                <li>從不在 $N'$ 中的節點中，找到一個 $D(a)$ 最小的節點 `a`。</li>
+                                <li>將 `a` 添加到 $N'$。</li>
+                                <li>對於所有與 `a` 相鄰且不在 $N'$ 中的節點 `b`，更新 $D(b) = \min(D(b), D(a) + c_{a,b})$。如果 $D(a) + c_{a,b}$ 更小，則更新 $p(b)$ 為 `a`。</li>
+                            </ul>
+                            <p class="text-xs mt-1">重複此循環直到所有節點都在 $N'$ 中。</p>
+                        </div>
+                    </div>
+                    <button id="animateDijkstraBtn" class="mt-3 px-4 py-2 bg-amber-500 text-white rounded hover:bg-amber-600">演示演算法步驟</button>
+                </div>
+
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">Dijkstra 演算法範例圖解</h3>
+                <p class="mb-3">以下圖示將演示從節點 `u` 開始運行 Dijkstra 演算法的過程。表格將顯示每一步的狀態變化。</p>
+                <div class="diagram-box relative h-96 w-full flex items-center justify-center">
+                    <div id="dijkstra-graph-container" class="relative w-full h-full">
+                        <!-- Nodes -->
+                        <div id="node-u" class="node-circle" style="left: 10%; top: 40%;">u</div>
+                        <div id="node-v" class="node-circle" style="left: 30%; top: 10%;">v</div>
+                        <div id="node-w" class="node-circle" style="left: 60%; top: 10%;">w</div>
+                        <div id="node-x" class="node-circle" style="left: 30%; top: 70%;">x</div>
+                        <div id="node-y" class="node-circle" style="left: 60%; top: 70%;">y</div>
+                        <div id="node-z" class="node-circle" style="left: 85%; top: 40%;">z</div>
+
+                        <!-- Links (Lines) -->
+                        <div id="link-uv" class="link-line" style="left: 14%; top: 48%; width: 22.36%; transform: rotate(-26.56deg);"></div>
+                        <div class="link-cost" style="left: 22%; top: 35%;">2</div>
+                        <div id="link-ux" class="link-line" style="left: 14%; top: 52%; width: 22.36%; transform: rotate(26.56deg);"></div>
+                        <div class="link-cost" style="left: 22%; top: 65%;">1</div>
+                        <div id="link-vx" class="link-line" style="left: 34%; top: 30%; width: 20%; transform: rotate(90deg);"></div>
+                        <div class="link-cost" style="left: 35%; top: 45%;">2</div>
+                        <div id="link-vw" class="link-line" style="left: 34%; top: 18%; width: 30%; transform: rotate(0deg);"></div>
+                        <div class="link-cost" style="left: 45%; top: 15%;">3</div>
+                        <div id="link-xw" class="link-line" style="left: 34%; top: 78%; width: 30%; transform: rotate(-26.56deg);"></div>
+                        <div class="link-cost" style="left: 45%; top: 65%;">3</div>
+                        <div id="link-xy" class="link-line" style="left: 34%; top: 78%; width: 30%; transform: rotate(0deg);"></div>
+                        <div class="link-cost" style="left: 45%; top: 75%;">1</div>
+                        <div id="link-wy" class="link-line" style="left: 64%; top: 18%; width: 30%; transform: rotate(26.56deg);"></div>
+                        <div class="link-cost" style="left: 75%; top: 35%;">1</div>
+                        <div id="link-wz" class="link-line" style="left: 64%; top: 18%; width: 22.36%; transform: rotate(26.56deg);"></div>
+                        <div class="link-cost" style="left: 75%; top: 25%;">5</div>
+                        <div id="link-yz" class="link-line" style="left: 64%; top: 78%; width: 22.36%; transform: rotate(-26.56deg);"></div>
+                        <div class="link-cost" style="left: 75%; top: 65%;">2</div>
+                        <div id="link-uw" class="link-line" style="left: 14%; top: 48%; width: 48.99%; transform: rotate(-5.71deg);"></div>
+                        <div class="link-cost" style="left: 35%; top: 40%;">5</div>
+                        <div id="link-vz" class="link-line" style="left: 34%; top: 18%; width: 51.96%; transform: rotate(11.31deg);"></div>
+                        <div class="link-cost" style="left: 55%; top: 25%;">5</div>
+                    </div>
+                </div>
+                <div class="overflow-x-auto mt-4">
+                    <table class="min-w-full bg-white border border-amber-200 rounded-lg">
+                        <thead>
+                            <tr class="bg-amber-100">
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">步驟</th>
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">N'</th>
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">D(v),p(v)</th>
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">D(w),p(w)</th>
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">D(x),p(x)</th>
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">D(y),p(y)</th>
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">D(z),p(z)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dijkstra-table-body">
+                            <tr id="dijkstra-row-0">
+                                <td class="py-2 px-4 border-b border-amber-200">0</td>
+                                <td class="py-2 px-4 border-b border-amber-200">u</td>
+                                <td class="py-2 px-4 border-b border-amber-200">2,u</td>
+                                <td class="py-2 px-4 border-b border-amber-200">5,u</td>
+                                <td class="py-2 px-4 border-b border-amber-200">1,u</td>
+                                <td class="py-2 px-4 border-b border-amber-200">∞</td>
+                                <td class="py-2 px-4 border-b border-amber-200">∞</td>
+                            </tr>
+                            <tr id="dijkstra-row-1">
+                                <td class="py-2 px-4 border-b border-amber-200">1</td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                            </tr>
+                            <tr id="dijkstra-row-2">
+                                <td class="py-2 px-4 border-b border-amber-200">2</td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                            </tr>
+                            <tr id="dijkstra-row-3">
+                                <td class="py-2 px-4 border-b border-amber-200">3</td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                            </tr>
+                            <tr id="dijkstra-row-4">
+                                <td class="py-2 px-4 border-b border-amber-200">4</td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                            </tr>
+                            <tr id="dijkstra-row-5">
+                                <td class="py-2 px-4 border-b border-amber-200">5</td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <button id="dijkstra-next-step-btn" class="mt-3 px-4 py-2 bg-amber-500 text-white rounded hover:bg-amber-600">下一步</button>
+                    <button id="dijkstra-reset-btn" class="mt-3 ml-2 px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400">重置</button>
+                </div>
+            </section>
+
+            <!-- 距離向量 -->
+            <section id="distance-vector" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">距離向量路由演算法</h2>
+                <p class="mb-3">距離向量演算法是一種分散式、迭代和非同步的路由演算法，基於 Bellman-Ford 方程。每個節點只與其直接鄰居交換距離向量估計，並根據這些資訊更新自己的距離向量。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">Bellman-Ford 方程</h3>
+                <p class="mb-2">設 $D_x(y)$ 為從節點 x 到 y 的最小成本路徑成本。則：</p>
+                <p class="text-center text-lg font-bold my-4">$$D_x(y) = \min_v \{c_{x,v} + D_v(y)\}$$</p>
+                <p class="mb-3">其中 $\min_v$ 是對所有 x 的鄰居 v 取最小值，$c_{x,v}$ 是從 x 到 v 的直接鏈路成本，$D_v(y)$ 是 v 到 y 的最小成本路徑估計。</p>
+
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">距離向量演算法範例圖解</h3>
+                <p class="mb-3">以下圖示將演示距離向量演算法的迭代過程，展示距離向量資訊如何在網路中傳播。</p>
+                <div class="diagram-box relative h-96 w-full flex items-center justify-center">
+                    <div id="dv-graph-container" class="relative w-full h-full">
+                        <!-- Nodes -->
+                        <div id="dv-node-a" class="dv-node" style="left: 10%; top: 10%;">a</div>
+                        <div id="dv-node-b" class="dv-node" style="left: 45%; top: 10%;">b</div>
+                        <div id="dv-node-c" class="dv-node" style="left: 80%; top: 10%;">c</div>
+                        <div id="dv-node-d" class="dv-node" style="left: 10%; top: 40%;">d</div>
+                        <div id="dv-node-e" class="dv-node" style="left: 45%; top: 40%;">e</div>
+                        <div id="dv-node-f" class="dv-node" style="left: 80%; top: 40%;">f</div>
+                        <div id="dv-node-g" class="dv-node" style="left: 10%; top: 70%;">g</div>
+                        <div id="dv-node-h" class="dv-node" style="left: 45%; top: 70%;">h</div>
+                        <div id="dv-node-i" class="dv-node" style="left: 80%; top: 70%;">i</div>
+
+                        <!-- Links -->
+                        <div id="dv-link-ab" class="dv-link" style="left: 16%; top: 18%; width: 30%; transform: rotate(0deg);"></div>
+                        <div class="dv-link-cost" style="left: 30%; top: 15%;">8</div>
+                        <div id="dv-link-bc" class="dv-link" style="left: 51%; top: 18%; width: 30%; transform: rotate(0deg);"></div>
+                        <div class="dv-link-cost" style="left: 65%; top: 15%;">1</div>
+                        <div id="dv-link-ad" class="dv-link" style="left: 18%; top: 16%; width: 25%; transform: rotate(90deg);"></div>
+                        <div class="dv-link-cost" style="left: 15%; top: 25%;">1</div>
+                        <div id="dv-link-be" class="dv-link" style="left: 53%; top: 16%; width: 25%; transform: rotate(90deg);"></div>
+                        <div class="dv-link-cost" style="left: 50%; top: 25%;">1</div>
+                        <div id="dv-link-de" class="dv-link" style="left: 16%; top: 48%; width: 30%; transform: rotate(0deg);"></div>
+                        <div class="dv-link-cost" style="left: 30%; top: 45%;">1</div>
+                        <div id="dv-link-ef" class="dv-link" style="left: 51%; top: 48%; width: 30%; transform: rotate(0deg);"></div>
+                        <div class="dv-link-cost" style="left: 65%; top: 45%;">1</div>
+                        <div id="dv-link-dg" class="dv-link" style="left: 18%; top: 46%; width: 25%; transform: rotate(90deg);"></div>
+                        <div class="dv-link-cost" style="left: 15%; top: 55%;">1</div>
+                        <div id="dv-link-eh" class="dv-link" style="left: 53%; top: 46%; width: 25%; transform: rotate(90deg);"></div>
+                        <div class="dv-link-cost" style="left: 50%; top: 55%;">1</div>
+                        <div id="dv-link-fi" class="dv-link" style="left: 88%; top: 46%; width: 25%; transform: rotate(90deg);"></div>
+                        <div class="dv-link-cost" style="left: 85%; top: 55%;">1</div>
+                        <div id="dv-link-gh" class="dv-link" style="left: 16%; top: 78%; width: 30%; transform: rotate(0deg);"></div>
+                        <div class="dv-link-cost" style="left: 30%; top: 75%;">1</div>
+                        <div id="dv-link-hi" class="dv-link" style="left: 51%; top: 78%; width: 30%; transform: rotate(0deg);"></div>
+                        <div class="dv-link-cost" style="left: 65%; top: 75%;">1</div>
+
+                        <!-- Message Arrows -->
+                        <div id="dv-arrow-ab" class="dv-message-arrow" style="left: 25%; top: 12%; transform: rotate(90deg);"></div>
+                        <div id="dv-arrow-ba" class="dv-message-arrow" style="left: 25%; top: 22%; transform: rotate(-90deg);"></div>
+                        <div id="dv-arrow-bc" class="dv-message-arrow" style="left: 60%; top: 12%; transform: rotate(90deg);"></div>
+                        <div id="dv-arrow-cb" class="dv-message-arrow" style="left: 60%; top: 22%; transform: rotate(-90deg);"></div>
+                        <div id="dv-arrow-ad" class="dv-message-arrow" style="left: 15%; top: 25%; transform: rotate(180deg);"></div>
+                        <div id="dv-arrow-da" class="dv-message-arrow" style="left: 25%; top: 25%; transform: rotate(0deg);"></div>
+                        <div id="dv-arrow-be" class="dv-message-arrow" style="left: 50%; top: 25%; transform: rotate(180deg);"></div>
+                        <div id="dv-arrow-eb" class="dv-message-arrow" style="left: 60%; top: 25%; transform: rotate(0deg);"></div>
+                        <div id="dv-arrow-de" class="dv-message-arrow" style="left: 25%; top: 42%; transform: rotate(90deg);"></div>
+                        <div id="dv-arrow-ed" class="dv-message-arrow" style="left: 25%; top: 52%; transform: rotate(-90deg);"></div>
+                        <div id="dv-arrow-ef" class="dv-message-arrow" style="left: 60%; top: 42%; transform: rotate(90deg);"></div>
+                        <div id="dv-arrow-fe" class="dv-message-arrow" style="left: 60%; top: 52%; transform: rotate(-90deg);"></div>
+                        <div id="dv-arrow-dg" class="dv-message-arrow" style="left: 15%; top: 55%; transform: rotate(180deg);"></div>
+                        <div id="dv-arrow-gd" class="dv-message-arrow" style="left: 25%; top: 55%; transform: rotate(0deg);"></div>
+                        <div id="dv-arrow-eh" class="dv-message-arrow" style="left: 50%; top: 55%; transform: rotate(180deg);"></div>
+                        <div id="dv-arrow-he" class="dv-message-arrow" style="left: 60%; top: 55%; transform: rotate(0deg);"></div>
+                        <div id="dv-arrow-fi" class="dv-message-arrow" style="left: 85%; top: 55%; transform: rotate(180deg);"></div>
+                        <div id="dv-arrow-if" class="dv-message-arrow" style="left: 95%; top: 55%; transform: rotate(0deg);"></div>
+                        <div id="dv-arrow-gh" class="dv-message-arrow" style="left: 25%; top: 72%; transform: rotate(90deg);"></div>
+                        <div id="dv-arrow-hg" class="dv-message-arrow" style="left: 25%; top: 82%; transform: rotate(-90deg);"></div>
+                        <div id="dv-arrow-hi" class="dv-message-arrow" style="left: 60%; top: 72%; transform: rotate(90deg);"></div>
+                        <div id="dv-arrow-ih" class="dv-message-arrow" style="left: 60%; top: 82%; transform: rotate(-90deg);"></div>
+                    </div>
+                </div>
+                <div class="overflow-x-auto mt-4">
+                    <table class="min-w-full bg-white border border-amber-200 rounded-lg">
+                        <thead>
+                            <tr class="bg-amber-100">
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">時間 (t)</th>
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">節點 a 的 DV</th>
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">節點 b 的 DV</th>
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">節點 c 的 DV</th>
+                                <th class="py-2 px-4 border-b border-amber-200 text-left">... (省略其他節點)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dv-table-body">
+                            <tr id="dv-row-0">
+                                <td class="py-2 px-4 border-b border-amber-200">0</td>
+                                <td class="py-2 px-4 border-b border-amber-200">D(a,a)=0, D(a,b)=8, D(a,d)=1, others=∞</td>
+                                <td class="py-2 px-4 border-b border-amber-200">D(b,b)=0, D(b,a)=8, D(b,c)=1, D(b,e)=1, others=∞</td>
+                                <td class="py-2 px-4 border-b border-amber-200">D(c,c)=0, D(c,b)=1, others=∞</td>
+                                <td class="py-2 px-4 border-b border-amber-200">...</td>
+                            </tr>
+                            <tr id="dv-row-1">
+                                <td class="py-2 px-4 border-b border-amber-200">1</td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                            </tr>
+                            <tr id="dv-row-2">
+                                <td class="py-2 px-4 border-b border-amber-200">2</td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                            </tr>
+                            <tr id="dv-row-3">
+                                <td class="py-2 px-4 border-b border-amber-200">3</td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                            </tr>
+                            <tr id="dv-row-4">
+                                <td class="py-2 px-4 border-b border-amber-200">4</td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                                <td class="py-2 px-4 border-b border-amber-200"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <button id="dv-next-step-btn" class="mt-3 px-4 py-2 bg-amber-500 text-white rounded hover:bg-amber-600">下一步</button>
+                    <button id="dv-reset-btn" class="mt-3 ml-2 px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400">重置</button>
+                </div>
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">鏈路成本變化與收斂問題</h3>
+                <p class="mb-2">距離向量演算法在「好消息」傳播時收斂速度快，但遇到「壞消息」（例如鏈路成本增加或斷開）時，可能會出現「數到無窮大 (Count-to-Infinity)」問題，導致收斂緩慢甚至路由迴圈。</p>
+            </section>
+
+            <!-- 自治系統內路由 (OSPF) -->
+            <section id="intra-as" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">自治系統內路由 (Intra-AS Routing): OSPF</h2>
+                <p class="mb-3">在一個自治系統 (AS) 內部，所有路由器運行相同的內部路由協定。OSPF (Open Shortest Path First) 是最常見的 Intra-AS 路由協定，它是一種鏈路狀態協定。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">OSPF 特性</h3>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">開放標準:</strong> 公開可用。</li>
+                    <li><strong class="font-semibold">鏈路狀態:</strong> 每個路由器透過「鏈路狀態通告」(LSA) 直接在 IP 上泛洪其鏈路狀態資訊給 AS 中的所有其他路由器。</li>
+                    <li><strong class="font-semibold">Dijkstra 演算法:</strong> 每個路由器擁有完整的拓撲資訊後，運行 Dijkstra 演算法計算轉發表。</li>
+                    <li><strong class="font-semibold">多種鏈路成本度量:</strong> 可基於頻寬、延遲等。</li>
+                    <li><strong class="font-semibold">安全性:</strong> 所有 OSPF 訊息都經過認證，以防止惡意入侵。</li>
+                </ul>
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">分層 OSPF</h3>
+                <p class="mb-2">為了解決大規模網路的路由問題，OSPF 採用兩層分層結構：本地區域 (Area) 和骨幹 (Backbone)。</p>
+                <div class="diagram-box flex flex-col items-center justify-center p-4">
+                    <div class="relative w-full h-64">
+                        <div class="absolute left-10 top-10 w-24 h-24 bg-blue-100 border border-blue-400 rounded-full flex items-center justify-center text-sm">區域 1</div>
+                        <div class="absolute right-10 top-10 w-24 h-24 bg-blue-100 border border-blue-400 rounded-full flex items-center justify-center text-sm">區域 2</div>
+                        <div class="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 w-48 h-24 bg-green-100 border border-green-400 rounded-lg flex items-center justify-center text-sm">骨幹 (Backbone)</div>
+                        <div class="absolute left-[25%] top-[40%] w-16 h-16 bg-purple-100 border border-purple-400 rounded-full flex items-center justify-center text-xs">區域邊界路由器</div>
+                        <div class="absolute right-[25%] top-[40%] w-16 h-16 bg-purple-100 border border-purple-400 rounded-full flex items-center justify-center text-xs">區域邊界路由器</div>
+                        <div class="absolute left-1/2 -translate-x-1/2 bottom-5 w-16 h-16 bg-orange-100 border border-orange-400 rounded-full flex items-center justify-center text-xs">骨幹邊界路由器</div>
+                        <div class="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 text-center text-xs mt-2">
+                            <p>鏈路狀態通告僅在區域或骨幹中泛洪。</p>
+                            <p>區域邊界路由器「匯總」其區域內目的地的距離，並在骨幹中通告。</p>
+                            <p>骨幹邊界路由器連接到其他自治系統。</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 自治系統間路由 (BGP) -->
+            <section id="inter-as" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">自治系統間路由 (Inter-AS Routing): BGP</h2>
+                <p class="mb-3">BGP (Border Gateway Protocol) 是網際網路事實上的域間路由協定，是連接整個網際網路的「膠水」。它允許子網向網際網路的其餘部分通告其存在和可達的目的地。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">BGP 基本概念</h3>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">BGP 會話:</strong> 兩個 BGP 路由器 (對等體) 透過半永久的 TCP 連接交換 BGP 訊息。</li>
+                    <li><strong class="font-semibold">路徑向量協定:</strong> BGP 通告通往不同目的網路前綴的路徑，這些路徑包含一系列自治系統 (AS-PATH)。</li>
+                    <li><strong class="font-semibold">eBGP (外部 BGP):</strong> 邊界路由器之間交換可達性資訊。</li>
+                    <li><strong class="font-semibold">iBGP (內部 BGP):</strong> AS 內部路由器之間傳播可達性資訊。</li>
+                </ul>
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">BGP 路徑通告範例</h3>
+                <p class="mb-3">以下圖示演示了 BGP 路徑通告如何從一個 AS 傳播到另一個 AS。</p>
+                <div class="diagram-box relative h-80 w-full flex items-center justify-center">
+                    <div id="bgp-graph-container" class="relative w-full h-full">
+                        <!-- AS1 -->
+                        <div class="absolute left-[5%] top-[30%] w-32 h-24 bg-blue-100 border border-blue-400 rounded-lg flex items-center justify-center text-sm">AS 1</div>
+                        <div id="bgp-node-1a" class="bgp-node" style="left: 8%; top: 35%;">1a</div>
+                        <div id="bgp-node-1c" class="bgp-node" style="left: 25%; top: 35%;">1c</div>
+                        <!-- AS2 -->
+                        <div class="absolute left-[35%] top-[30%] w-32 h-24 bg-blue-100 border border-blue-400 rounded-lg flex items-center justify-center text-sm">AS 2</div>
+                        <div id="bgp-node-2a" class="bgp-node" style="left: 38%; top: 35%;">2a</div>
+                        <div id="bgp-node-2c" class="bgp-node" style="left: 55%; top: 35%;">2c</div>
+                        <!-- AS3 -->
+                        <div class="absolute left-[65%] top-[30%] w-32 h-24 bg-blue-100 border border-blue-400 rounded-lg flex items-center justify-center text-sm">AS 3</div>
+                        <div id="bgp-node-3a" class="bgp-node" style="left: 68%; top: 35%;">3a</div>
+                        <div id="bgp-node-3c" class="bgp-node" style="left: 85%; top: 35%;">3c</div>
+                        <div id="bgp-node-X" class="bgp-node" style="left: 85%; top: 60%;">X</div>
+
+                        <!-- Links -->
+                        <div class="bgp-link" style="left: 30%; top: 43%; width: 8%; transform: rotate(0deg);"></div> <!-- 1c-2a -->
+                        <div class="bgp-link" style="left: 60%; top: 43%; width: 8%; transform: rotate(0deg);"></div> <!-- 2c-3a -->
+                        <div class="bgp-link" style="left: 88%; top: 50%; width: 10%; transform: rotate(90deg);"></div> <!-- 3c-X -->
+
+                        <!-- Path Highlights -->
+                        <div id="bgp-path-1" class="bgp-path-highlight" style="left: 60%; top: 43%; width: 8%; transform: rotate(0deg);"></div>
+                        <div id="bgp-path-2" class="bgp-path-highlight" style="left: 30%; top: 43%; width: 8%; transform: rotate(0deg);"></div>
+                        <div id="bgp-path-3" class="bgp-path-highlight" style="left: 88%; top: 50%; width: 10%; transform: rotate(90deg);"></div>
+
+                        <!-- Messages -->
+                        <div id="bgp-msg-1" class="bgp-message" style="left: 62%; top: 38%;">AS3, X</div>
+                        <div id="bgp-msg-2" class="bgp-message" style="left: 32%; top: 38%;">AS2, AS3, X</div>
+                    </div>
+                </div>
+                <div id="bgp-steps" class="space-y-2 mt-4">
+                    <div class="algorithm-step p-3 bg-amber-50 rounded border border-amber-200">
+                        <strong>步驟 1: AS3 通告 X</strong><br>
+                        AS3 邊界路由器 3a 透過 eBGP 從其內部路由獲知目的地 X 的可達性。它向 AS2 邊界路由器 2c 通告路徑 <code>AS3, X</code>。
+                    </div>
+                    <div class="algorithm-step p-3 bg-amber-50 rounded border border-amber-200">
+                        <strong>步驟 2: AS2 內部傳播</strong><br>
+                        AS2 路由器 2c 根據其策略接受路徑 <code>AS3, X</code>，並透過 iBGP 將此資訊傳播給 AS2 內的所有路由器 (包括 2a)。
+                    </div>
+                    <div class="algorithm-step p-3 bg-amber-50 rounded border border-amber-200">
+                        <strong>步驟 3: AS2 通告 AS1</strong><br>
+                        AS2 邊界路由器 2a 根據其策略，透過 eBGP 向 AS1 邊界路由器 1c 通告路徑 <code>AS2, AS3, X</code>。
+                    </div>
+                    <div class="algorithm-step p-3 bg-amber-50 rounded border border-amber-200">
+                        <strong>步驟 4: AS1 內部傳播</strong><br>
+                        AS1 路由器 1c 根據其策略接受路徑 <code>AS2, AS3, X</code>，並透過 iBGP 將此資訊傳播給 AS1 內的所有路由器。
+                    </div>
+                </div>
+                <button id="animateBgpBtn" class="mt-3 px-4 py-2 bg-amber-500 text-white rounded hover:bg-amber-600">演示 BGP 通告</button>
+
+                <h3 class="text-xl font-semibold mt-4 mb-2 text-amber-600">BGP 路徑選擇</h3>
+                <p class="mb-2">路由器可能學習到通往同一目的 AS 的多條路徑，並根據以下標準選擇最佳路徑：</p>
+                <ol class="list-decimal list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">本地偏好值 (Local Preference Value):</strong> 策略決定 (例如，偏好客戶網路的路徑)。</li>
+                    <li><strong class="font-semibold">最短 AS-PATH:</strong> 選擇經過最少自治系統的路徑。</li>
+                    <li><strong class="font-semibold">最近的 NEXT-HOP 路由器 (Hot Potato Routing):</strong> 選擇本領域內成本最低的出口路由器，即使這可能導致資料在域外經過更多 AS。</li>
+                    <li><strong class="font-semibold">額外標準。</strong></li>
+                </ol>
+            </section>
+
+            <!-- SDN 控制平面 -->
+            <section id="sdn" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">軟體定義網路 (SDN) 控制平面</h2>
+                <p class="mb-3">SDN 是一種新興的網路控制方法，它將控制邏輯從路由器中分離出來，集中到一個或多個遠端控制器中，實現網路的集中管理和可程式化。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">SDN 架構</h3>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">分離的資料平面與控制平面:</strong> 路由器只負責資料轉發，控制邏輯由外部控制器處理。</li>
+                    <li><strong class="font-semibold">集中式控制:</strong> 一個邏輯上集中的控制器維護網路的全局視圖，並計算轉發表。</li>
+                    <li><strong class="font-semibold">可程式化:</strong> 透過開放 API (例如 OpenFlow)，控制器可以動態地配置和管理網路設備。</li>
+                </ul>
+                <div class="diagram-box flex flex-col items-center justify-center p-4">
+                    <div class="text-center mb-2">遠端控制器 (控制平面)</div>
+                    <div class="relative w-full h-48 flex items-center justify-around">
+                        <div class="w-20 h-32 bg-gray-200 border border-gray-400 rounded-lg flex flex-col items-center justify-between p-2">
+                            <div class="text-xs font-bold">路由器 1</div>
+                            <div class="text-xs">轉發表</div>
+                        </div>
+                        <div class="w-20 h-32 bg-gray-200 border border-gray-400 rounded-lg flex flex-col items-center justify-between p-2">
+                            <div class="text-xs font-bold">路由器 2</div>
+                            <div class="text-xs">轉發表</div>
+                        </div>
+                        <div class="w-20 h-32 bg-gray-200 border border-gray-400 rounded-lg flex flex-col items-center justify-between p-2">
+                            <div class="text-xs font-bold">路由器 3</div>
+                            <div class="text-xs">轉發表</div>
+                        </div>
+                        <div class="absolute top-0 w-full h-full flex items-center justify-center">
+                            <div class="w-24 h-24 bg-red-100 border border-red-400 rounded-full flex items-center justify-center text-sm">控制器</div>
+                            <div class="absolute left-1/2 top-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-b-[15px] border-l-transparent border-r-transparent border-b-red-500 transform -rotate-90 translate-x-12"></div>
+                            <div class="absolute left-1/2 top-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-b-[15px] border-l-transparent border-r-transparent border-b-red-500 transform -rotate-90 translate-x-12 translate-y-16"></div>
+                        </div>
+                    </div>
+                    <p class="text-xs mt-2 text-center">控制器計算並安裝轉發表到路由器。</p>
+                </div>
+            </section>
+
+            <!-- ICMP -->
+            <section id="icmp" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">網際網路控制訊息協定 (ICMP)</h2>
+                <p class="mb-3">ICMP (Internet Control Message Protocol) 是網路層的一個協定，用於主機和路由器之間交換網路層資訊，例如錯誤報告和網路查詢。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">ICMP 的主要用途</h3>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">錯誤報告:</strong> 當資料報在網路中遇到問題時 (例如目的地不可達、TTL 超時)，ICMP 會生成錯誤訊息並發送回發送方。</li>
+                    <li><strong class="font-semibold">網路診斷:</strong>
+                        <ul class="list-circle list-inside ml-4">
+                            <li><strong class="font-semibold">Ping:</strong> 使用 ICMP 回應請求和回覆訊息來測試主機的可達性。</li>
+                            <li><strong class="font-semibold">Traceroute:</strong> 使用 ICMP TTL 超時訊息來追蹤資料報到達目的地的路徑。</li>
+                        </ul>
+                    </li>
+                </ul>
+            </section>
+
+            <!-- 網路管理 -->
+            <section id="network-mgmt" class="content-section">
+                <h2 class="text-2xl font-bold mb-4 text-amber-700">網路管理與配置</h2>
+                <p class="mb-3">網路管理涉及對網路硬體、軟體和數據的配置、監控和維護，以確保網路的正常運行和最佳性能。</p>
+                <h3 class="text-xl font-semibold mb-2 text-amber-600">常見的網路管理協定與工具</h3>
+                <ul class="list-disc list-inside mb-3 space-y-1">
+                    <li><strong class="font-semibold">SNMP (Simple Network Management Protocol):</strong> 簡單網路管理協定，用於在 IP 網路上交換管理資訊。它允許網路管理系統監控連接在網路上的設備。</li>
+                    <li><strong class="font-semibold">NETCONF/YANG:</strong>
+                        <ul class="list-circle list-inside ml-4">
+                            <li><strong class="font-semibold">NETCONF (Network Configuration Protocol):</strong> 一種基於 XML 的協定，用於安裝、操作和刪除網路設備的配置。</li>
+                            <li><strong class="font-semibold">YANG (Yet Another Next Generation):</strong> 一種資料建模語言，用於定義 NETCONF 協定中使用的配置和狀態資料。</li>
+                        </ul>
+                    </li>
+                </ul>
+                <p class="mt-2">這些協定和工具是網路管理員監控網路性能、診斷問題和遠端配置設備的關鍵。</p>
+            </section>
+        </main>
+
+        <footer class="mt-8 text-center text-sm text-amber-700">
+            <p>&copy; 2025 互動式網路層控制平面學習指南。基於 Kurose & Ross 教材內容製作。</p>
+        </footer>
+    </div>
+
+    <!-- 提問小助手按鈕 -->
+    <div id="chatButton" class="chat-button">✨</div>
+
+    <!-- 提問小助手視窗 -->
+    <div id="chatWindow" class="chat-window">
+        <div class="chat-header">
+            <span>提問小助手</span>
+            <button id="chatCloseButton" class="chat-close-button">&times;</button>
+        </div>
+        <div id="chatMessages" class="chat-messages flex flex-col">
+            <div class="message-bubble message-bot">您好！我是您的網路層控制平面小助手，有什麼問題可以問我喔！</div>
+        </div>
+        <div class="chat-input-area">
+            <textarea id="chatInput" class="chat-input" placeholder="輸入您的問題..." rows="1"></textarea>
+            <button id="chatSendButton" class="chat-send-button">發送</button>
+        </div>
+    </div>
+
+    <script>
+        // Define chat-related DOM elements first to ensure they are initialized
+        const chatButton = document.getElementById('chatButton');
+        const chatWindow = document.getElementById('chatWindow');
+        const chatCloseButton = document.getElementById('chatCloseButton');
+        const chatMessages = document.getElementById('chatMessages');
+        const chatInput = document.getElementById('chatInput');
+        const chatSendButton = document.getElementById('chatSendButton');
+
+        const navButtons = document.querySelectorAll('.nav-button');
+        const contentSections = document.querySelectorAll('.content-section');
+        const mainContent = document.getElementById('main-content');
+
+        const sectionPrompts = {
+            'overview': '請解釋網路層控制平面和資料平面之間的主要區別。',
+            'routing-intro': '請解釋鏈路狀態演算法和距離向量演算法之間的主要區別。',
+            'dijkstra': '請解釋 Dijkstra 演算法是如何計算最短路徑的？',
+            'distance-vector': '請解釋距離向量演算法中「數到無窮大」問題是什麼？',
+            'intra-as': '請解釋 OSPF 協定中「分層」的目的是什麼？',
+            'inter-as': '請解釋 BGP 協定中「AS-PATH」屬性的作用是什麼？',
+            'sdn': '請解釋軟體定義網路 (SDN) 的核心優勢是什麼？',
+            'icmp': '請解釋 ICMP 協定在網路診斷中的作用是什麼？',
+            'network-mgmt': '請解釋 SNMP 和 NETCONF/YANG 在網路管理中的區別是什麼？'
+        };
+
+        function showSection(targetId) {
+            contentSections.forEach(section => {
+                section.classList.remove('active');
+            });
+            navButtons.forEach(button => {
+                button.classList.remove('active');
+            });
+
+            const targetSection = document.getElementById(targetId);
+            const targetButton = document.querySelector(`.nav-button[data-target="${targetId}"]`);
+
+            if (targetSection) {
+                targetSection.classList.add('active');
+                mainContent.scrollTop = 0;
+                mainContent.scrollTo({ top: 0, behavior: 'smooth' });
+                // Update chat input with contextual prompt
+                // Ensure chatInput is not null before accessing its properties
+                if (chatInput) {
+                    if (sectionPrompts[targetId]) {
+                        chatInput.value = sectionPrompts[targetId];
+                        chatInput.style.height = 'auto'; // Reset height before adjusting
+                        chatInput.style.height = chatInput.scrollHeight + 'px';
+                    } else {
+                        chatInput.value = '';
+                        chatInput.style.height = '40px';
+                    }
+                }
+            }
+            if (targetButton) {
+                targetButton.classList.add('active');
+            }
+        }
+
+        navButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const targetId = button.dataset.target;
+                showSection(targetId);
+            });
+        });
+
+        if (navButtons.length > 0) {
+            showSection(navButtons[0].dataset.target);
+        }
+
+        // Dijkstra Algorithm Animation
+        const dijkstraSteps = document.querySelectorAll('#dijkstra-steps .algorithm-step');
+        const animateDijkstraBtn = document.getElementById('animateDijkstraBtn');
+        let currentDijkstraStep = 0;
+        let dijkstraInterval;
+
+        function showNextDijkstraAlgorithmStep() {
+            if (currentDijkstraStep < dijkstraSteps.length) {
+                dijkstraSteps[currentDijkstraStep].classList.add('visible');
+                currentDijkstraStep++;
+            } else {
+                clearInterval(dijkstraInterval);
+            }
+        }
+
+        if (animateDijkstraBtn) {
+            animateDijkstraBtn.addEventListener('click', () => {
+                currentDijkstraStep = 0;
+                dijkstraSteps.forEach(step => step.classList.remove('visible'));
+                clearInterval(dijkstraInterval);
+                dijkstraInterval = setInterval(showNextDijkstraAlgorithmStep, 1000);
+            });
+        }
+
+        // Dijkstra Graph & Table Visualization
+        const dijkstraNodes = {
+            'u': document.getElementById('node-u'),
+            'v': document.getElementById('node-v'),
+            'w': document.getElementById('node-w'),
+            'x': document.getElementById('node-x'),
+            'y': document.getElementById('node-y'),
+            'z': document.getElementById('node-z')
+        };
+        const dijkstraLinks = {
+            'uv': document.getElementById('link-uv'),
+            'ux': document.getElementById('link-ux'),
+            'vx': document.getElementById('link-vx'),
+            'vw': document.getElementById('link-vw'),
+            'xw': document.getElementById('link-xw'),
+            'xy': document.getElementById('link-xy'),
+            'wy': document.getElementById('link-wy'),
+            'wz': document.getElementById('link-wz'),
+            'yz': document.getElementById('link-yz'),
+            'uw': document.getElementById('link-uw'),
+            'vz': document.getElementById('link-vz')
+        };
+
+        const dijkstraTableData = [
+            // Step 0
+            { N_prime: 'u', D: { v: '2,u', w: '5,u', x: '1,u', y: '∞', z: '∞' }, paths: [] },
+            // Step 1 (min is x)
+            { N_prime: 'ux', D: { v: '2,u', w: '4,x', x: '1,u', y: '2,x', z: '∞' }, paths: ['ux'] },
+            // Step 2 (min is y)
+            { N_prime: 'uxy', D: { v: '2,u', w: '3,y', x: '1,u', y: '2,x', z: '4,y' }, paths: ['ux', 'xy'] },
+            // Step 3 (min is v)
+            { N_prime: 'uxyv', D: { v: '2,u', w: '3,y', x: '1,u', y: '2,x', z: '4,y' }, paths: ['ux', 'xy', 'uv'] },
+            // Step 4 (min is w)
+            { N_prime: 'uxyvw', D: { v: '2,u', w: '3,y', x: '1,u', y: '2,x', z: '4,y' }, paths: ['ux', 'xy', 'uv', 'yw'] },
+            // Step 5 (min is z)
+            { N_prime: 'uxyvwz', D: { v: '2,u', w: '3,y', x: '1,u', y: '2,x', z: '4,y' }, paths: ['ux', 'xy', 'uv', 'yw', 'yz'] }
+        ];
+
+        let currentDijkstraTableStep = 0;
+        const dijkstraNextStepBtn = document.getElementById('dijkstra-next-step-btn');
+        const dijkstraResetBtn = document.getElementById('dijkstra-reset-btn');
+        const dijkstraTableBody = document.getElementById('dijkstra-table-body');
+
+        function updateDijkstraTableAndGraph() {
+            if (currentDijkstraTableStep >= dijkstraTableData.length) {
+                return;
+            }
+
+            const data = dijkstraTableData[currentDijkstraTableStep];
+            const row = document.getElementById(`dijkstra-row-${currentDijkstraTableStep}`);
+
+            // Update table row
+            row.children[1].textContent = data.N_prime;
+            row.children[2].textContent = data.D.v;
+            row.children[3].textContent = data.D.w;
+            row.children[4].textContent = data.D.x;
+            row.children[5].textContent = data.D.y;
+            row.children[6].textContent = data.D.z;
+
+            // Highlight current N' node
+            for (const nodeKey in dijkstraNodes) {
+                dijkstraNodes[nodeKey].classList.remove('highlight');
+            }
+            data.N_prime.split('').forEach(nodeChar => {
+                if (dijkstraNodes[nodeChar]) {
+                    dijkstraNodes[nodeChar].classList.add('highlight');
+                }
+            });
+
+            // Highlight paths
+            for (const linkKey in dijkstraLinks) {
+                dijkstraLinks[linkKey].classList.remove('highlight');
+            }
+            data.paths.forEach(path => {
+                if (dijkstraLinks[path]) {
+                    dijkstraLinks[path].classList.add('highlight');
+                }
+            });
+
+            // Highlight current row in table
+            Array.from(dijkstraTableBody.children).forEach(r => r.classList.remove('table-highlight'));
+            row.classList.add('table-highlight');
+
+            currentDijkstraTableStep++;
+        }
+
+        function resetDijkstra() {
+            currentDijkstraTableStep = 0;
+            // Clear table except initial row
+            for (let i = 1; i < dijkstraTableData.length; i++) {
+                const row = document.getElementById(`dijkstra-row-${i}`);
+                row.children[1].textContent = '';
+                row.children[2].textContent = '';
+                row.children[3].textContent = '';
+                row.children[4].textContent = '';
+                row.children[5].textContent = '';
+                row.children[6].textContent = '';
+            }
+            // Reset initial row
+            const initialRow = document.getElementById('dijkstra-row-0');
+            initialRow.children[1].textContent = dijkstraTableData[0].N_prime;
+            initialRow.children[2].textContent = dijkstraTableData[0].D.v;
+            initialRow.children[3].textContent = dijkstraTableData[0].D.w;
+            initialRow.children[4].textContent = dijkstraTableData[0].D.x;
+            initialRow.children[5].textContent = dijkstraTableData[0].D.y;
+            initialRow.children[6].textContent = dijkstraTableData[0].D.z;
+
+            // Reset graph highlights
+            for (const nodeKey in dijkstraNodes) {
+                dijkstraNodes[nodeKey].classList.remove('highlight');
+            }
+            for (const linkKey in dijkstraLinks) {
+                dijkstraLinks[linkKey].classList.remove('highlight');
+            }
+            dijkstraNodes['u'].classList.add('highlight'); // Highlight source node 'u'
+
+            Array.from(dijkstraTableBody.children).forEach(r => r.classList.remove('table-highlight'));
+            document.getElementById('dijkstra-row-0').classList.add('table-highlight');
+        }
+
+        if (dijkstraNextStepBtn) {
+            dijkstraNextStepBtn.addEventListener('click', updateDijkstraTableAndGraph);
+            dijkstraResetBtn.addEventListener('click', resetDijkstra);
+            resetDijkstra(); // Initial reset on load
+        }
+
+        // Distance Vector Algorithm Animation
+        const dvNodes = {
+            'a': document.getElementById('dv-node-a'), 'b': document.getElementById('dv-node-b'), 'c': document.getElementById('dv-node-c'),
+            'd': document.getElementById('dv-node-d'), 'e': document.getElementById('dv-node-e'), 'f': document.getElementById('dv-node-f'),
+            'g': document.getElementById('dv-node-g'), 'h': document.getElementById('dv-node-h'), 'i': document.getElementById('dv-node-i')
+        };
+        const dvLinks = {
+            'ab': document.getElementById('dv-link-ab'), 'bc': document.getElementById('dv-link-bc'), 'ad': document.getElementById('dv-link-ad'),
+            'be': document.getElementById('dv-link-be'), 'de': document.getElementById('dv-link-de'), 'ef': document.getElementById('dv-link-ef'),
+            'dg': document.getElementById('dv-link-dg'), 'eh': document.getElementById('dv-link-eh'), 'fi': document.getElementById('dv-link-fi'),
+            'gh': document.getElementById('dv-link-gh'), 'hi': document.getElementById('dv-link-hi')
+        };
+        const dvArrows = {
+            'ab': document.getElementById('dv-arrow-ab'), 'ba': document.getElementById('dv-arrow-ba'),
+            'bc': document.getElementById('dv-arrow-bc'), 'cb': document.getElementById('dv-arrow-cb'),
+            'ad': document.getElementById('dv-arrow-ad'), 'da': document.getElementById('dv-arrow-da'),
+            'be': document.getElementById('dv-arrow-be'), 'eb': document.getElementById('dv-arrow-eb'),
+            'de': document.getElementById('dv-arrow-de'), 'ed': document.getElementById('dv-arrow-ed'),
+            'ef': document.getElementById('dv-arrow-ef'), 'fe': document.getElementById('dv-arrow-fe'),
+            'dg': document.getElementById('dv-arrow-dg'), 'gd': document.getElementById('dv-arrow-gd'),
+            'eh': document.getElementById('dv-arrow-eh'), 'he': document.getElementById('dv-arrow-he'),
+            'fi': document.getElementById('dv-arrow-fi'), 'if': document.getElementById('dv-arrow-if'),
+            'gh': document.getElementById('dv-arrow-gh'), 'hg': document.getElementById('dv-arrow-hg'),
+            'hi': document.getElementById('dv-arrow-hi'), 'ih': document.getElementById('dv-arrow-ih')
+        };
+
+        const dvTableData = [
+            // t=0 (Initial state, only direct neighbors known)
+            {
+                'a': 'D(a,a)=0, D(a,b)=8, D(a,d)=1, others=∞',
+                'b': 'D(b,b)=0, D(b,a)=8, D(b,c)=1, D(b,e)=1, others=∞',
+                'c': 'D(c,c)=0, D(c,b)=1, others=∞',
+                'arrows': []
+            },
+            // t=1 (Nodes compute DV based on neighbors' t=0 DVs, then send)
+            {
+                'a': 'D(a,a)=0, D(a,b)=8, D(a,d)=1, D(a,e)=2(d), D(a,g)=2(d), others=∞',
+                'b': 'D(b,b)=0, D(b,a)=8, D(b,c)=1, D(b,d)=2(e), D(b,e)=1, D(b,f)=2(e), D(b,h)=2(e), others=∞',
+                'c': 'D(c,c)=0, D(c,b)=1, D(c,e)=2(b), D(c,f)=3(b), D(c,h)=3(b), others=∞',
+                'arrows': ['ab', 'ba', 'bc', 'cb', 'ad', 'da', 'be', 'eb', 'de', 'ed', 'ef', 'fe', 'dg', 'gd', 'eh', 'he', 'fi', 'if', 'gh', 'hg', 'hi', 'ih'] // All links active, sending DVs
+            },
+            // t=2 (Nodes compute DV based on neighbors' t=1 DVs, then send)
+            {
+                'a': 'D(a,a)=0, D(a,b)=3(d), D(a,c)=4(d), D(a,d)=1, D(a,e)=2(d), D(a,f)=3(d), D(a,g)=2(d), D(a,h)=3(d), D(a,i)=4(d)',
+                'b': 'D(b,b)=0, D(b,a)=2(e), D(b,c)=1, D(b,d)=2(e), D(b,e)=1, D(b,f)=2(e), D(b,g)=3(e), D(b,h)=2(e), D(b,i)=3(e)',
+                'c': 'D(c,c)=0, D(c,a)=3(b), D(c,b)=1, D(c,d)=3(b), D(c,e)=2(b), D(c,f)=2(e), D(c,g)=4(b), D(c,h)=3(b), D(c,i)=3(e)',
+                'arrows': ['ab', 'ba', 'bc', 'cb', 'ad', 'da', 'be', 'eb', 'de', 'ed', 'ef', 'fe', 'dg', 'gd', 'eh', 'he', 'fi', 'if', 'gh', 'hg', 'hi', 'ih'] // All links active, sending DVs
+            },
+            // t=3 (Nodes compute DV based on neighbors' t=2 DVs, then send)
+            {
+                'a': 'D(a,a)=0, D(a,b)=3(d), D(a,c)=4(d), D(a,d)=1, D(a,e)=2(d), D(a,f)=3(d), D(a,g)=2(d), D(a,h)=3(d), D(a,i)=4(d)',
+                'b': 'D(b,b)=0, D(b,a)=2(e), D(b,c)=1, D(b,d)=2(e), D(b,e)=1, D(b,f)=2(e), D(b,g)=3(e), D(b,h)=2(e), D(b,i)=3(e)',
+                'c': 'D(c,c)=0, D(c,a)=3(b), D(c,b)=1, D(c,d)=3(b), D(c,e)=2(b), D(c,f)=2(e), D(c,g)=4(b), D(c,h)=3(b), D(c,i)=3(e)',
+                'arrows': [] // Assuming convergence, no more updates
+            }
+        ];
+
+        let currentDvTableStep = 0;
+        const dvNextStepBtn = document.getElementById('dv-next-step-btn');
+        const dvResetBtn = document.getElementById('dv-reset-btn');
+        const dvTableBody = document.getElementById('dv-table-body');
+
+        function updateDvTableAndGraph() {
+            if (currentDvTableStep >= dvTableData.length) {
+                return;
+            }
+
+            const data = dvTableData[currentDvTableStep];
+            const row = document.getElementById(`dv-row-${currentDvTableStep}`);
+
+            // Update table row
+            row.children[1].textContent = data.a;
+            row.children[2].textContent = data.b;
+            row.children[3].textContent = data.c;
+
+            // Highlight current row in table
+            Array.from(dvTableBody.children).forEach(r => r.classList.remove('table-highlight'));
+            row.classList.add('table-highlight');
+
+            // Animate arrows
+            for (const arrowKey in dvArrows) {
+                dvArrows[arrowKey].classList.remove('active');
+            }
+            data.arrows.forEach(arrowId => {
+                if (dvArrows[`dv-arrow-${arrowId}`]) {
+                    dvArrows[`dv-arrow-${arrowId}`].classList.add('active');
+                }
+            });
+
+            currentDvTableStep++;
+        }
+
+        function resetDv() {
+            currentDvTableStep = 0;
+            // Clear table except initial row
+            for (let i = 1; i < dvTableData.length; i++) {
+                const row = document.getElementById(`dv-row-${i}`);
+                row.children[1].textContent = '';
+                row.children[2].textContent = '';
+                row.children[3].textContent = '';
+                row.children[4].textContent = '';
+            }
+            // Reset initial row
+            const initialRow = document.getElementById('dv-row-0');
+            initialRow.children[1].textContent = dvTableData[0].a;
+            initialRow.children[2].textContent = dvTableData[0].b;
+            initialRow.children[3].textContent = dvTableData[0].c;
+            initialRow.children[4].textContent = dvTableData[0]['... (省略其他節點)']; // Ensure this is handled if it exists
+
+            // Reset arrow highlights
+            for (const arrowKey in dvArrows) {
+                dvArrows[arrowKey].classList.remove('active');
+            }
+
+            Array.from(dvTableBody.children).forEach(r => r.classList.remove('table-highlight'));
+            document.getElementById('dv-row-0').classList.add('table-highlight');
+        }
+
+        if (dvNextStepBtn) {
+            dvNextStepBtn.addEventListener('click', updateDvTableAndGraph);
+            dvResetBtn.addEventListener('click', resetDv);
+            resetDv(); // Initial reset on load
+        }
+
+        // BGP Path Advertisement Animation
+        const bgpSteps = document.querySelectorAll('#bgp-steps .algorithm-step');
+        const animateBgpBtn = document.getElementById('animateBgpBtn');
+        const bgpPaths = {
+            'path-1': document.getElementById('bgp-path-1'), // AS3,X to 2c
+            'path-2': document.getElementById('bgp-path-2'), // AS2,AS3,X to 1c
+            'path-3': document.getElementById('bgp-path-3')  // 3c-X link
+        };
+        const bgpMessages = {
+            'msg-1': document.getElementById('bgp-msg-1'), // AS3, X
+            'msg-2': document.getElementById('bgp-msg-2')  // AS2, AS3, X
+        };
+
+        let currentBgpStep = 0;
+        let bgpInterval;
+
+        function showNextBgpStep() {
+            if (currentBgpStep < bgpSteps.length) {
+                // Hide all previous elements
+                for (const key in bgpPaths) bgpPaths[key].classList.remove('visible');
+                for (const key in bgpMessages) bgpMessages[key].classList.remove('visible');
+                bgpSteps.forEach(step => step.classList.remove('visible'));
+
+                // Show current step's elements
+                bgpSteps[currentBgpStep].classList.add('visible');
+
+                if (currentBgpStep === 0) { // Step 1: AS3通告X
+                    bgpPaths['path-3'].classList.add('visible'); // Link from 3c to X
+                    bgpPaths['path-1'].classList.add('visible'); // Path from 3a to 2c
+                    bgpMessages['msg-1'].classList.add('visible');
+                } else if (currentBgpStep === 1) { // Step 2: AS2內部傳播 (implicit)
+                    bgpPaths['path-1'].classList.add('visible'); // Keep path 3a to 2c
+                    bgpPaths['path-3'].classList.add('visible');
+                } else if (currentBgpStep === 2) { // Step 3: AS2通告AS1
+                    bgpPaths['path-1'].classList.add('visible'); // Keep path 3a to 2c
+                    bgpPaths['path-2'].classList.add('visible'); // Path from 2a to 1c
+                    bgpPaths['path-3'].classList.add('visible');
+                    bgpMessages['msg-2'].classList.add('visible');
+                } else if (currentBgpStep === 3) { // Step 4: AS1內部傳播 (implicit)
+                    bgpPaths['path-1'].classList.add('visible');
+                    bgpPaths['path-2'].classList.add('visible');
+                    bgpPaths['path-3'].classList.add('visible');
+                    bgpMessages['msg-2'].classList.add('visible');
+                }
+
+                currentBgpStep++;
+            } else {
+                clearInterval(bgpInterval);
+            }
+        }
+
+        if (animateBgpBtn) {
+            animateBgpBtn.addEventListener('click', () => {
+                currentBgpStep = 0;
+                // Reset all elements
+                for (const key in bgpPaths) bgpPaths[key].classList.remove('visible');
+                for (const key in bgpMessages) bgpMessages[key].classList.remove('visible');
+                bgpSteps.forEach(step => step.classList.remove('visible'));
+                
+                clearInterval(bgpInterval);
+                bgpInterval = setInterval(showNextBgpStep, 1500);
+            });
+        }
+
+        // Tooltip for IP Datagram fields (re-using for general fields)
+        const generalFields = document.querySelectorAll('.datagram-field'); // Re-use this class for any field tooltips
+        const generalTooltip = document.getElementById('ip-field-description-tooltip'); // Re-use this tooltip element
+
+        generalFields.forEach(field => {
+            field.addEventListener('mouseenter', (e) => {
+                generalTooltip.textContent = field.dataset.description;
+                generalTooltip.style.display = 'block';
+                const rect = field.getBoundingClientRect();
+                const mainRect = mainContent.getBoundingClientRect();
+                generalTooltip.style.left = `${e.clientX - mainRect.left + 15}px`;
+                generalTooltip.style.top = `${e.clientY - mainRect.top + 15}px`;
+            });
+            field.addEventListener('mouseleave', () => {
+                generalTooltip.style.display = 'none';
+            });
+        });
+
+        // Chatbot functionality
+        // These variables are now declared at the top of the script block.
+        // const chatButton = document.getElementById('chatButton');
+        // const chatWindow = document.getElementById('chatWindow');
+        // const chatCloseButton = document.getElementById('chatCloseButton');
+        // const chatMessages = document.getElementById('chatMessages');
+        // const chatInput = document.getElementById('chatInput');
+        // const chatSendButton = document.getElementById('chatSendButton');
+
+        let chatHistory = [{ role: "model", parts: [{ text: "您好！我是您的網路層控制平面小助手，有什麼問題可以問我喔！" }] }];
+
+        chatButton.addEventListener('click', () => {
+            chatWindow.classList.toggle('open');
+            if (chatWindow.classList.contains('open')) {
+                chatMessages.scrollTop = chatMessages.scrollHeight; // Scroll to bottom on open
+            }
+        });
+
+        chatCloseButton.addEventListener('click', () => {
+            chatWindow.classList.remove('open');
+        });
+
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault(); // Prevent new line
+                sendMessage();
+            }
+        });
+
+        chatSendButton.addEventListener('click', sendMessage);
+
+        async function sendMessage() {
+            const userMessage = chatInput.value.trim();
+            if (userMessage === '') return;
+
+            // Display user message
+            appendMessage(userMessage, 'user');
+            chatInput.value = '';
+            chatInput.style.height = '40px'; // Reset textarea height
+
+            // Add user message to history
+            chatHistory.push({ role: "user", parts: [{ text: userMessage }] });
+
+            // Show loading indicator
+            const loadingBubble = appendMessage('思考中...', 'bot loading');
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+
+            // Disable input and send button
+            chatInput.disabled = true;
+            chatSendButton.disabled = true;
+
+            try {
+                const payload = { contents: chatHistory };
+                const apiKey = ""; // Canvas will provide this at runtime
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                // Remove loading indicator
+                chatMessages.removeChild(loadingBubble);
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const botResponse = result.candidates[0].content.parts[0].text;
+                    appendMessage(botResponse, 'bot');
+                    chatHistory.push({ role: "model", parts: [{ text: botResponse }] });
+                } else {
+                    appendMessage('抱歉，我無法理解您的問題。', 'bot');
+                }
+            } catch (error) {
+                console.error('Gemini API error:', error);
+                // Remove loading indicator
+                chatMessages.removeChild(loadingBubble);
+                appendMessage('發生錯誤，請稍後再試。', 'bot');
+            } finally {
+                // Re-enable input and send button
+                chatInput.disabled = false;
+                chatSendButton.disabled = false;
+                chatMessages.scrollTop = chatMessages.scrollHeight; // Scroll to bottom after response
+                chatInput.focus();
+            }
+        }
+
+        function appendMessage(text, sender) {
+            const bubble = document.createElement('div');
+            bubble.classList.add('message-bubble');
+            if (sender === 'user') {
+                bubble.classList.add('message-user');
+            } else if (sender === 'bot') {
+                bubble.classList.add('message-bot');
+            } else if (sender === 'bot loading') {
+                bubble.classList.add('message-bot', 'message-loading');
+            }
+            bubble.textContent = text;
+            chatMessages.appendChild(bubble);
+            chatMessages.scrollTop = chatMessages.scrollHeight; // Auto-scroll to bottom
+            return bubble; // Return the bubble element for potential removal (e.g., loading indicator)
+        }
+
+        // Adjust textarea height dynamically
+        chatInput.addEventListener('input', () => {
+            chatInput.style.height = 'auto';
+            chatInput.style.height = chatInput.scrollHeight + 'px';
+        });
+    </script>
+</body>
+</html>
+```
+I made some changes. 我將 `chatInput` 和其他聊天相關的 DOM 元素變數的宣告位置移動到 JavaScript 檔案的開頭，確保它們在任何函數嘗試使用它們之前就已經被初
